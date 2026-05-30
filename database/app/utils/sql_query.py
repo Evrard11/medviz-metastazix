@@ -12,10 +12,15 @@ def open_connection():
             status_code=400, detail=f"fail to connect to the database: {error}"
         )
 
-    create_default_table(connection, cursor)
+    create_default_tables(connection, cursor)
     return connection, cursor
-
 
 def close_connection(connection, cursor):
     cursor.close()
     connection.close()
+
+
+#TODO add tables
+def create_default_tables(connection, cursor):
+    cursor.execute("""CREATE TABLE IF NOT EXISTS table ();""")
+    connection.commit()
