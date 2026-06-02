@@ -13,5 +13,7 @@ authors = [
 dependencies = [
     "dash",
     "requests",
-    "pandas"
+    "pandas",
+    "dash-mantine-components",
+    "dash-iconify"
 ]
