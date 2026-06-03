@@ -1,7 +1,5 @@
 import os
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-
-DATABASE_BACKEND_URL = os.environ.get("DATABASE_BACKEND_URL", "")
+from fastapi import FastAPI
 
 app = FastAPI()
 
