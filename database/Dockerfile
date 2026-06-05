@@ -7,6 +7,6 @@ WORKDIR /app
 COPY pyproject.toml .
 RUN uv sync --no-dev
 
-COPY app/ .
+COPY app/ ./app/
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

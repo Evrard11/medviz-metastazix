@@ -1,22 +1,14 @@
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from utils.sql_query import (
-    open_connection,
-    close_connection,
-)
+from fastapi import FastAPI
+from app.routers import patients, exams, segmentations, nodules
 
-app = FastAPI()
+app = FastAPI(title="MedViz Database Service")
 
-@app.get("/hello")
-async def get_hello():
-    return "hello world!"
+app.include_router(patients.router)
+app.include_router(exams.router)
+app.include_router(segmentations.router)
+app.include_router(nodules.router)
 
-@app.get("/get-table")
-async def get_database():
-    connection, cursor = open_connection()
 
-    # SQL queries can be written in utils/sql_query.py
-    # cursor.execute("SELECT * FROM table;")
-    # data = cursor.fetchall()
-
-    close_connection(connection, cursor)
-    return None  # data
+@app.get("/health")
+def health():
+    return {"status": "ok"}
