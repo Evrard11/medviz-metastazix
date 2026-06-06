@@ -2,6 +2,21 @@ import dash_mantine_components as dmc
 from dash_iconify import DashIconify
 from data.mock_data import mock_patients, mock_anomalies
 from components.cards import patient_card, anomaly_card
+from dash import dcc
+import plotly.express as px
+import numpy as np
+
+# Mock 2D image
+mock_image = np.zeros((512, 512))
+fig_2d = px.imshow(mock_image, color_continuous_scale='gray', template="plotly_dark")
+fig_2d.update_layout(
+    dragmode="drawclosedpath",
+    newshape=dict(line_color="cyan", opacity=0.8, line_width=2),
+    margin=dict(l=0, r=0, b=0, t=0),
+    coloraxis_showscale=False,
+    xaxis=dict(showticklabels=False),
+    yaxis=dict(showticklabels=False)
+)
 
 left_column = dmc.Stack(
     w=320,
@@ -60,21 +75,24 @@ center_column = dmc.Stack(
                 ),
                 #2D DICOM Card
                 dmc.Card(
-                    withBorder=True, radius="lg", flex=1,
-                    style={"backgroundColor": "#000", "position": "relative", "display": "flex", "alignItems": "center", "justifyContent": "center"},
+                    withBorder=True, radius="lg", flex=1, p=0,
+                    style={"backgroundColor": "#000", "position": "relative", "display": "flex", "overflow": "hidden"},
                     children=[
-                        dmc.Stack(
-                            gap=2,
-                            style={"position": "absolute", "top": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)"},
-                            children=[
-                                dmc.Text("Scan 2D", fw=700, c="cyan", size="sm"),
-                            ]
+                        dcc.Graph(
+                            figure=fig_2d,
+                            style={"width": "100%", "height": "100%", "flex": 1},
+                            config={
+                                "displayModeBar": True,
+                                "modeBarButtonsToAdd": ["drawclosedpath", "drawcircle", "drawrect", "eraseshape"],
+                                "displaylogo": False
+                            }
                         ),
                         dmc.Stack(
-                            align="center", gap="xs",
+                            gap=2,
+                            style={"position": "absolute", "top": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)", "zIndex": 10},
                             children=[
-                                dmc.Title("Rendu DICOM 2D", order=3, c="dimmed"),
-                                dmc.Text("Intégration Cornerstone3D", c="dimmed", size="sm")
+                                dmc.Text("Scan 2D", fw=700, c="cyan", size="sm"),
+                                dmc.Text("Tracé manuel activé", c="dimmed", size="xs")
                             ]
                         )
                     ]
