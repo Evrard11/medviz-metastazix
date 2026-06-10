@@ -15,5 +15,7 @@ dependencies = [
     "requests",
     "pandas",
     "dash-mantine-components",
-    "dash-iconify"
+    "dash-iconify",
+    "tcia-utils>=3.3.1",
+    "idc-index>=0.12.3",
 ]

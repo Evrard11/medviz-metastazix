@@ -3,7 +3,7 @@ import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from downloader import LidcIdriDownloader
+from backend.segmentation.downloader import LidcIdriDownloader
 
 class PatientManager:
     # volume format: (Z, Y, X)

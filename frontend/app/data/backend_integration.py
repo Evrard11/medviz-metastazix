@@ -28,4 +28,22 @@ segmenter = Segmenter(patient_manager)
 segmenter.preprocess()
 segmenter.nodules_segmented = segmenter.segment_otsu()
 
+print("Génération du maillage 3D des poumons...")
+import numpy as np
+from skimage.measure import marching_cubes
+
+downsampled_lung_mesh = segmenter.lung[::4, ::4, ::4]
+verts, faces, _, _ = marching_cubes(downsampled_lung_mesh, level=-400)
+
+verts = verts * 4
+
+# Convert Z, Y, X to X, Y, Z
+lung_points_arr = np.zeros_like(verts)
+lung_points_arr[:, 0] = verts[:, 2]
+lung_points_arr[:, 1] = verts[:, 1]
+lung_points_arr[:, 2] = verts[:, 0]
+
+lung_points = lung_points_arr.flatten().tolist()
+lung_polys = np.column_stack((np.full(len(faces), 3), faces)).flatten().tolist()
+
 print("Backend prêt.")

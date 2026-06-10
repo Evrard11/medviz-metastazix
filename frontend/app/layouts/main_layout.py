@@ -5,6 +5,8 @@ from components.cards import patient_card, anomaly_card
 from dash import dcc
 import plotly.express as px
 import numpy as np
+import dash_vtk
+from data.backend_integration import segmenter, lung_points, lung_polys
 
 # Mock 2D image
 mock_image = np.zeros((512, 512))
@@ -17,6 +19,10 @@ fig_2d.update_layout(
     xaxis=dict(showticklabels=False),
     yaxis=dict(showticklabels=False)
 )
+
+patient_cards = []
+for p in mock_patients:
+    patient_cards.append(patient_card(p))
 
 left_column = dmc.Stack(
     w=320,
@@ -34,7 +40,7 @@ left_column = dmc.Stack(
         dmc.ScrollArea(
             offsetScrollbars=True,
             flex=1,
-            children=dmc.Stack(gap="xs", children=[patient_card(p) for p in mock_patients])
+            children=dmc.Stack(gap="xs", children=patient_cards)
         )
     ]
 )
@@ -45,6 +51,8 @@ center_column = dmc.Stack(
     p="md",
     gap="md",
     children=[
+        dcc.Store(id='annotations-store', data=[]),
+        dcc.Store(id='selected-anomaly-store', data=None),
         dmc.Group(
             flex=1,
             align="stretch",
@@ -64,11 +72,14 @@ center_column = dmc.Stack(
                                 dmc.Text("Tourner avec la souris", c="dimmed", size="xs")
                             ]
                         ),
-                        dmc.Stack(
-                            align="center", gap="xs",
+                        dash_vtk.View(
+                            id="vtk-view",
                             children=[
-                                dmc.Title("Rendu VTK 3D", order=3, c="dimmed"),
-                                dmc.Text("Intégration VTK", c="dimmed", size="sm")
+                                dash_vtk.GeometryRepresentation(
+                                    children=[
+                                        dash_vtk.PolyData(points=lung_points, polys=lung_polys)
+                                    ]
+                                )
                             ]
                         )
                     ]
@@ -79,6 +90,7 @@ center_column = dmc.Stack(
                     style={"backgroundColor": "#000", "position": "relative", "display": "flex", "overflow": "hidden"},
                     children=[
                         dcc.Graph(
+                            id='2d-viewer-graph',
                             figure=fig_2d,
                             style={"width": "100%", "height": "100%", "flex": 1},
                             config={
@@ -129,9 +141,9 @@ right_column = dmc.Stack(
     style={"borderLeft": "1px solid var(--mantine-color-default-border)", "backgroundColor": "var(--mantine-color-body)"},
     children=[
         dmc.Title("Analyse Manuelle", order=2, mb="xs"),
-        dmc.Text(f"Anomalies Détectées ({len(mock_anomalies)})", fw=700, mt="sm", mb="xs"),
-        dmc.Stack(gap="xs", children=[anomaly_card(a) for a in mock_anomalies]),
-        dmc.Text("Tracés et Mesures (0)", fw=700, mt="sm", mb="xs"),
+        dmc.Text("Anomalies Détectées", id="anomalies-title", fw=700, mt="sm", mb="xs"),
+        dmc.Stack(gap="xs", id="anomalies-list", children=[]),
+        dmc.Text("Tracés et Mesures", id="traces-title", fw=700, mt="sm", mb="xs"),
         dmc.Box(
             p="xl",
             style={"border": "1px dashed var(--mantine-color-default-border)", "borderRadius": "8px", "textAlign": "center", "backgroundColor": "rgba(255,255,255,0.02)"},
