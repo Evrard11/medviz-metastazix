@@ -1,5 +1,6 @@
 import dash_mantine_components as dmc
 from dash import html
+from dash_iconify import DashIconify
 
 def patient_card(patient):
     """
@@ -52,7 +53,17 @@ def anomaly_card(anomaly):
                         mb="xs",
                         children=[
                             dmc.Badge(a_id, color="red", variant="light", size="sm"),
-                            dmc.Text(f"Slice {anomaly.get('slice', 'N/A')}", size="sm", c="cyan", fw=500)
+                            dmc.Group(
+                                gap="xs",
+                                children=[
+                                    dmc.Text(f"Slice {anomaly.get('slice', 'N/A')}", size="sm", c="cyan", fw=500),
+                                    dmc.ActionIcon(
+                                        DashIconify(icon="radix-icons:trash"),
+                                        size="sm", color="red", variant="subtle",
+                                        id={'type': 'delete-anomaly', 'index': a_id}
+                                    )
+                                ]
+                            )
                         ]
                     ),
                     dmc.Text(f"Localisation: {anomaly.get('loc', 'Dessin manuel')}", size="sm"),

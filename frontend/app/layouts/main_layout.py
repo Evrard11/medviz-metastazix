@@ -122,11 +122,10 @@ center_column = dmc.Stack(
                         dmc.Box(
                             flex=1, px="md",
                             children=[
-                                dmc.Slider(id='slice-slider', min=1, max=45, step=1, value=15, color="cyan", marks=None)
+                                dmc.Slider(id='slice-slider', min=1, max=segmenter.lung.shape[0], step=1, value=15, color="cyan", marks=None)
                             ]
                         ),
-                        #TODO : Hardcoded for now
-                        dmc.Text("Slice 15/45", id='slice-display', fw=700, c="cyan", w=100, ta="right")
+                        dmc.Text(f"Slice 15/{segmenter.lung.shape[0]}", id='slice-display', fw=700, c="cyan", w=100, ta="right")
                     ]
                 )
             ]
