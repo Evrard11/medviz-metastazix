@@ -3,7 +3,7 @@ import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from downloader import LidcIdriDownloader
+from segmentation.downloader import LidcIdriDownloader
 
 class PatientManager:
     # volume format: (Z, Y, X)
@@ -41,6 +41,8 @@ class PatientManager:
         reader.SetFileNames(self.dicom_names)
         ct_image = reader.Execute()
         self.volume = sitk.GetArrayFromImage(ct_image)
+        self.voxel_size = ct_image.GetSpacing()
+        print(f"Voxel size : {self.voxel_size}")
 
         # load SEG
         self.seg_masks = []

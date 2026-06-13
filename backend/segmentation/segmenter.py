@@ -2,10 +2,10 @@ import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
 
-from patient_manager import PatientManager
+from segmentation.patient_manager import PatientManager
 from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops
-
+import SimpleITK as sitk
 
 class Segmenter:
 
@@ -24,11 +24,11 @@ class Segmenter:
 
     # region Preprocess
 
-    def extract_lung_mask(self, threshold=-400, dilation_it=3):
+    def extract_lung_mask(self, threshold=-400, dilation_it=3, erosion_it=5):
         """
-
         :param threshold: −350 HU, src => https://pmc.ncbi.nlm.nih.gov/articles/PMC12290796/
-        :param dilation_it: b
+        :param dilation_it:
+        :param erosion_it:
         :return:
         """
         thr_vol = self.patient.volume < threshold
@@ -51,6 +51,7 @@ class Segmenter:
 
         # Dilatation to get pleural nodule (on wall lung)
         lung_mask = ndimage.binary_dilation(lung_mask, iterations=dilation_it)
+        lung_mask = ndimage.binary_erosion(lung_mask, iterations=erosion_it)
 
         return lung_mask.astype(np.uint8)
 
@@ -85,6 +86,10 @@ class Segmenter:
     # region Segmentation
 
     def segment_otsu(self):
+        """
+        Nice work on big objects
+        :return:
+        """
         # get threshold from otsu
         bool_roi = self.lung[self.lung_mask == 1]
         thr = threshold_otsu(bool_roi)
@@ -96,8 +101,6 @@ class Segmenter:
 
         lab = label(eroded)
         regions = regionprops(lab)
-        # more than 2 :)
-        print(f"{len(regions)} composants post erosion")
 
         nodule_mask = np.zeros_like(candidates, dtype=np.uint8)
         for r in regions:
@@ -105,7 +108,51 @@ class Segmenter:
             if 50 < r.area < 10000:
                 nodule_mask[lab == r.label] = 1
 
+        print(f"{len(regions)} composants otsu")
         return nodule_mask
+
+    def segment_region_growing(self, lower=-100, upper=400):
+        """
+        Nice work on small objects
+        :param lower:
+        :param upper:
+        :return:
+        """
+
+        sitk_img = sitk.GetImageFromArray(self.lung.astype(np.float32))
+
+        seeds_mask = (self.lung > lower) & (self.lung_mask == 1)
+        lab_seeds = label(seeds_mask)
+        seed_regions = regionprops(lab_seeds)
+
+        seeds_sitk = []
+        for r in seed_regions:
+            coords = r.coords
+            values = self.lung[coords[:, 0], coords[:, 1], coords[:, 2]]
+            best = coords[np.argmax(values)]
+            seeds_sitk.append((int(best[2]), int(best[1]), int(best[0])))
+
+        seg = sitk.ConnectedThreshold(
+            sitk_img,
+            seedList=seeds_sitk,
+            lower=float(lower),
+            upper=float(upper)
+        )
+
+        nodule_mask = sitk.GetArrayFromImage(seg).astype(np.uint8)
+        nodule_mask = nodule_mask & self.lung_mask
+
+        lab = label(nodule_mask)
+        res = np.zeros_like(nodule_mask)
+        for r in regionprops(lab):
+            if 50 < r.area < 10000:
+                res[lab == r.label] = 1
+
+        print(f"{len(regionprops(label(res)))} composants region growing")
+        return res
+
+    def merge_nodules_segmented(self, mask1, mask2):
+        return np.logical_or(mask1, mask2).astype(np.uint8)
 
     # endregion Segmentation
 
@@ -138,7 +185,8 @@ class Segmenter:
                 'cube': cube,
                 'centroid': (cz, cy, cx),
                 'bbox': r.bbox,
-                'area': r.area
+                'area': r.area,
+                'spacing': self.patient.voxel_size,
             })
 
         self.candidates = candidates
@@ -149,7 +197,11 @@ class Segmenter:
         self.preprocess()
 
         print("Segmentation ...")
-        self.nodules_segmented = self.segment_otsu()
+        print("Otsu segmentation ...")
+        nodules_segmented_ostu = self.segment_otsu()
+        print("Region growing segmentation ...")
+        nodules_segmented_rg = self.segment_region_growing()
+        self.nodules_segmented = self.merge_nodules_segmented(nodules_segmented_ostu, nodules_segmented_rg)
 
         print("Selecting Candidates ...")
         self.get_candidates()
@@ -189,6 +241,18 @@ class Segmenter:
         plt.imshow(self.nodules_segmented[roi_slice], alpha=0.4, cmap='Reds')
         plt.title(f"Segmentation - tranche {slice_idx} (roi idx {roi_slice})")
         plt.show()
+
+    def display_segmentation_all(self):
+        """DEBUG: display all slices with segmentation"""
+        z_offset = np.where(self.total_lung_mask)[0].min()
+        for roi_slice in range(self.lung.shape[0]):
+            if not self.nodules_segmented[roi_slice].any():
+                continue
+            plt.figure(figsize=(6, 6))
+            plt.imshow(self.lung[roi_slice], cmap='gray', vmin=-1000, vmax=400)
+            plt.imshow(self.nodules_segmented[roi_slice], alpha=0.4, cmap='Reds')
+            plt.title(f"Segmentation - roi idx {roi_slice} (volume idx {roi_slice + z_offset})")
+            plt.show()
 
     def display_candidates_3d(self, max_display=10):
         """DEBUG: display lung candidates"""
