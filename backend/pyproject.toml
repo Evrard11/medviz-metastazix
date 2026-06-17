@@ -15,5 +15,16 @@ dependencies = [
     "uvicorn[standard]",
     "numpy",
     "requests",
-    "scikit-learn"
+    "scikit-learn",
+    "ipykernel>=7.2.0",
+    "matplotlib>=3.10.9",
+    "numpy>=2.2.6",
+    "pandas-stubs~=2.2.3",
+    "pydicom>=3.0.2",
+    "scikit-image>=0.25.2",
+    "scipy>=1.15.3",
+    "scipy-stubs~=1.15.3",
+    "simpleitk>=2.5.5",
+    "tcia-utils>=3.3.1",
+    "pip>=26.1.2",
 ]
