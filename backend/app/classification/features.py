@@ -8,7 +8,7 @@ def cube_to_sitk(cube: np.ndarray, spacing: tuple) -> sitk.Image:
     return image
 
 def extract_features(cube: np.ndarray, spacing: tuple) -> dict:
-    from masking import create_mask
+    from .masking import create_mask
     mask = create_mask(cube)
 
     if mask.sum() == 0:

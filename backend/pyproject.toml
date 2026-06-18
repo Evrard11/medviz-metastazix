@@ -28,4 +28,8 @@ dependencies = [
     "tcia-utils>=3.3.1",
     "pip>=26.1.2",
     "pytest>=9.1.0",
+    "pyradiomics",
 ]
+
+[tool.uv.sources]
+pyradiomics = { git = "https://github.com/AIM-Harvard/pyradiomics", rev = "8ed579383b44806651c463d5e691f3b2b57522ab" }

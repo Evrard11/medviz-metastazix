@@ -1,9 +1,9 @@
 import pylidc as pl
 import numpy as np
 import pandas as pd
-from features import extract_features
+from .features import extract_features
 import xgboost as xgb
-from classifier import save_model
+from .classifier import save_model
 
 
 def mean_malignancy(nodule):

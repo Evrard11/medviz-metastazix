@@ -26,7 +26,7 @@ class FakeModel:
 # masking
 
 def test_masking():
-    from masking import create_mask
+    from .masking import create_mask
     cube = make_fake_cube()
     mask = create_mask(cube)
 
@@ -37,7 +37,7 @@ def test_masking():
     print(f"OK test_masking — {mask.sum()} voxels détectés")
 
 def test_masking_cube_vide():
-    from masking import create_mask
+    from .masking import create_mask
     cube = np.full((32, 32, 32), -800, dtype=np.int32)
     mask = create_mask(cube)
 
@@ -45,7 +45,7 @@ def test_masking_cube_vide():
     print("OK test_masking_cube_vide")
 
 def test_masking_valeurs_limites():
-    from masking import create_mask
+    from .masking import create_mask
     cube = np.full((32, 32, 32), -800, dtype=np.int32)
 
     cube[0, 0, 0] = -100 
@@ -64,7 +64,7 @@ def test_masking_valeurs_limites():
 # features
 
 def test_features():
-    from features import extract_features
+    from .features import extract_features
     cube = make_fake_cube()
     features = extract_features(cube, spacing=(1.0, 1.0, 1.0))
 
@@ -75,7 +75,7 @@ def test_features():
     print(f"OK test_features — {len(features)} features extraites")
 
 def test_features_cles_triees():
-    from features import extract_features
+    from .features import extract_features
     cube = make_fake_cube()
     f1 = extract_features(cube, spacing=(1.0, 1.0, 1.0))
     f2 = extract_features(cube, spacing=(1.0, 1.0, 1.0))
@@ -84,7 +84,7 @@ def test_features_cles_triees():
     print("OK test_features_cles_triees")
 
 def test_features_cubes_differents():
-    from features import extract_features
+    from .features import extract_features
     cube_benin = make_fake_cube(nodule_value=30)
     cube_malin = make_fake_cube(nodule_value=200)
 
@@ -97,7 +97,7 @@ def test_features_cubes_differents():
 # pipeline
 
 def test_pipeline():
-    from pipeline import predict_candidates
+    from .pipeline import predict_candidates
     candidates = [make_fake_candidate()]
     results = predict_candidates(candidates, FakeModel())
 
@@ -109,7 +109,7 @@ def test_pipeline():
     print(f"OK test_pipeline — score : {results[0]['malignancy_score']}")
 
 def test_pipeline_plusieurs_candidats():
-    from pipeline import predict_candidates
+    from .pipeline import predict_candidates
     candidates = [make_fake_candidate() for _ in range(5)]
     results = predict_candidates(candidates, FakeModel())
 
@@ -117,7 +117,7 @@ def test_pipeline_plusieurs_candidats():
     print(f"OK test_pipeline_plusieurs_candidats — {len(results)} résultats")
 
 def test_pipeline_cube_vide():
-    from pipeline import predict_candidates
+    from .pipeline import predict_candidates
     candidate = make_fake_candidate()
     candidate["cube"] = np.full((32, 32, 32), -800, dtype=np.int32)
     results = predict_candidates([candidate], FakeModel())
@@ -128,7 +128,7 @@ def test_pipeline_cube_vide():
 # classifier
 
 def test_classifier_save_load():
-    from classifier import save_model, load_model
+    from .classifier import save_model, load_model
 
     model = FakeModel()
     path = "/tmp/test_modele.pkl"
