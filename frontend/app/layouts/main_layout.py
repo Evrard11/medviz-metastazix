@@ -1,6 +1,6 @@
 import dash_mantine_components as dmc
 from dash_iconify import DashIconify
-from data.mock_data import mock_patients, mock_anomalies
+from data.db_client import get_patients
 from components.cards import patient_card, anomaly_card
 from dash import dcc
 import plotly.express as px
@@ -21,9 +21,9 @@ fig_2d.update_layout(
 )
 
 patient_cards = []
-for p in mock_patients:
+patients = get_patients()
+for p in patients:
     patient_cards.append(patient_card(p))
-
 left_column = dmc.Stack(
     w=320,
     h="100vh",
