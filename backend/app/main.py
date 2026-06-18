@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from app.classification.classifier import load_model
 from app.classification.pipeline import predict_candidates
-
+from app import db_client
 BASE_DIR = pathlib.Path(__file__).parent
 PKL_PATH = BASE_DIR / "classification" / "modele_xgb.pkl"
 
@@ -31,3 +31,20 @@ def predict(data: dict):
     if model is None:
         raise HTTPException(503, "Model not loaded")
     return predict_candidates(data["candidates"], model)
+
+@app.post("/analyze/{exam_id}")
+def analyze(exam_id: int, data: dict):
+    if model is None:
+        raise HTTPException(503, "Model not loaded")
+
+    exam = db_client.get_exam(exam_id)   # lève une erreur HTTP si absent
+
+    results = predict_candidates(data["candidates"], model)
+
+    persisted = db_client.persist_analysis(
+        exam_id=exam_id,
+        algorithm="xgboost",
+        results=results,
+    )
+
+    return persisted
