@@ -25,15 +25,15 @@ def create(segmentation_id: int, data: dict):
         cur.execute(
             """INSERT INTO nodules
                (segmentation_id, centroid_x, centroid_y, centroid_z,
-                volume_mm3, max_diameter_mm, tnm_category, features)
+                volume_mm3, max_diameter_mm, malignancy_score, tnm_category, features)
                VALUES
                (%(segmentation_id)s, %(centroid_x)s, %(centroid_y)s, %(centroid_z)s,
-                %(volume_mm3)s, %(max_diameter_mm)s, %(tnm_category)s, %(features)s)
+                %(volume_mm3)s, %(max_diameter_mm)s, %(malignancy_score)s,
+                %(tnm_category)s, %(features)s)
                RETURNING *""",
             data,
         )
         return cur.fetchone()
-
 
 def delete(nodule_id: int):
     with get_cursor() as cur:

@@ -44,6 +44,7 @@ CREATE TABLE nodules (
     centroid_z      NUMERIC(8,2),
     volume_mm3      NUMERIC(10,2),
     max_diameter_mm NUMERIC(6,2),
+    malignancy_score NUMERIC(4,3),
     tnm_category    VARCHAR(5),
     features        JSONB,
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
