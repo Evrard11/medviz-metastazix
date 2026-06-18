@@ -1,5 +1,5 @@
 [project]
-name = "medviz-metastazix-database"
+name = "medviz-metastazix-backend"
 version = "1.0.0"
 requires-python = ">=3.12"
 description = "Medical application to detect pulmonary nodules"
