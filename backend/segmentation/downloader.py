@@ -40,15 +40,18 @@ class LidcIdriDownloader:
             ct_uids = [s['SeriesInstanceUID'] for s in ct_series]
             nbia.downloadSeries(ct_uids, input_type="list", path=self.get_patient_path(pid))
 
+    def fill_patients_files_info(self) -> None:
+        for pid in self.patient_ids:
+            patient_path = self.get_patient_path(pid)
+            subdirs = {d: len(os.listdir(os.path.join(patient_path, d)))
+                       for d in os.listdir(patient_path)
+                       if os.path.isdir(os.path.join(patient_path, d))}
+            self.patients_files_info[pid] = subdirs
+
     def get_patient_files_info(self, pid):
         # get files info
-        if self.patients_files_info == {}:
-            for pid in self.patient_ids:
-                patient_path = self.get_patient_path(pid)
-                subdirs = {d: len(os.listdir(os.path.join(patient_path, d)))
-                           for d in os.listdir(patient_path)
-                           if os.path.isdir(os.path.join(patient_path, d))}
-                self.patients_files_info[pid] = subdirs
+        if set(self.patients_files_info.keys()) == set(self.patient_ids):
+            self.fill_patients_files_info()
 
         patient_path = self.get_patient_path(pid)
         for d, count in self.patients_files_info[pid].items():

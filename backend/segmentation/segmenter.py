@@ -7,6 +7,7 @@ from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops
 import SimpleITK as sitk
 
+
 class Segmenter:
 
     def __init__(self, patient: PatientManager):
@@ -212,6 +213,11 @@ class Segmenter:
 
     # region Display
 
+    def get_roi_offset(self) -> tuple[int, int, int]:
+        """z,y,x offset for original volume size"""
+        z_idx, y_idx, x_idx = np.where(self.total_lung_mask)
+        return z_idx.min(), y_idx.min(), x_idx.min()
+
     def _to_roi_slice(self, slice_idx):
         """offset due to slices reduction"""
         z_offset = np.where(self.total_lung_mask)[0].min()
@@ -281,3 +287,83 @@ class Segmenter:
         plt.show()
 
     # endregion Display
+
+    # region TestHelper
+
+    @staticmethod
+    def match_candidates(
+            annotations: list[dict],
+            candidates: list[dict],
+            roi_offset: tuple[int, int, int],
+            max_dist: float = 15.0
+    ) -> list[tuple[dict, dict]]:
+        """
+        1-to-1 matches btw annotation and segmentation within a max distance
+        :return: list of (annotation, matched_candidate) pairs.
+        """
+        oz, oy, ox = roi_offset
+        # set of candidates idx already paired
+        used = set()
+        pairs = []
+
+        for ann in annotations:
+            az, ay, ax = ann['centroid']
+            # to roi coordinates like seg candidates
+            az, ay, ax = az - oz, ay - oy, ax - ox
+
+            min_dist, min_idx = float('inf'), None
+            for i, cand in enumerate(candidates):
+                if i in used:
+                    continue
+                cz, cy, cx = cand['centroid']
+                dist = np.sqrt((az - cz) ** 2 + (ay - cy) ** 2 + (ax - cx) ** 2)
+                if dist < min_dist:
+                    min_dist, min_idx = dist, i
+
+            if min_idx is not None and min_dist <= max_dist:
+                pairs.append((ann, candidates[min_idx]))
+                used.add(min_idx)
+
+        return pairs
+
+    @staticmethod
+    def compute_iou_3d(
+            ann: dict,
+            cand: dict,
+            ann_volume_mask: np.ndarray,
+            seg_mask: np.ndarray,
+            roi_offset: tuple[int, int, int]
+    ) -> float:
+        """
+        IoU btw annotation and segmention nodule on region
+        """
+        oz, oy, ox = roi_offset
+
+        az1, ay1, ax1, az2, ay2, ax2 = ann['bbox']
+        # to roi coordinates like seg candidates
+        az1, ay1, ax1 = az1 - oz, ay1 - oy, ax1 - ox
+        az2, ay2, ax2 = az2 - oz, ay2 - oy, ax2 - ox
+
+        cz1, cy1, cx1, cz2, cy2, cx2 = cand['bbox']
+
+        z1, y1, x1 = min(az1, cz1), min(ay1, cy1), min(ax1, cx1)
+        z2, y2, x2 = max(az2, cz2), max(ay2, cy2), max(ax2, cx2)
+
+        # to roi coordinates like seg candidates
+        ann_region = ann_volume_mask[
+            z1 + oz:z2 + oz,
+            y1 + oy:y2 + oy,
+            x1 + ox:x2 + ox
+        ].astype(bool)
+        seg_region = seg_mask[z1:z2, y1:y2, x1:x2].astype(bool)
+
+        min_shape = tuple(min(a, b) for a, b in zip(ann_region.shape, seg_region.shape))
+        ann_region = ann_region[:min_shape[0], :min_shape[1], :min_shape[2]]
+        seg_region = seg_region[:min_shape[0], :min_shape[1], :min_shape[2]]
+
+        inter = np.logical_and(ann_region, seg_region).sum()
+        union = np.logical_or(ann_region, seg_region).sum()
+
+        return float(inter / union) if union > 0 else 0.0
+
+    # TestHelper
