@@ -1,7 +1,10 @@
-from dash import Dash, html
+from core import app
+from layouts.main_layout import layout
+from callbacks.interactions import register_callbacks
 
-app = Dash()
+app.layout = layout
 
-app.layout = [html.Div(children='Hello World')]
+register_callbacks()
 
-app.run(host="0.0.0.0", port=80, debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8050, debug=True)
