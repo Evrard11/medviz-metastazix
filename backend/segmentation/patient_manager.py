@@ -3,7 +3,8 @@ import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from backend.segmentation.downloader import LidcIdriDownloader
+from segmentation.downloader import LidcIdriDownloader
+from skimage.measure import label, regionprops
 
 class PatientManager:
     # volume format: (Z, Y, X)
@@ -41,6 +42,8 @@ class PatientManager:
         reader.SetFileNames(self.dicom_names)
         ct_image = reader.Execute()
         self.volume = sitk.GetArrayFromImage(ct_image)
+        self.voxel_size = ct_image.GetSpacing()
+        print(f"Voxel size : {self.voxel_size}")
 
         # load SEG
         self.seg_masks = []
@@ -111,3 +114,32 @@ class PatientManager:
 
                 plt.tight_layout()
                 plt.show()
+
+    def get_annotation_candidates(self, patch_size=32) -> list[dict]:
+        """
+        Convert SEG annotations to candidate format (same as Segmenter.get_candidates)
+        """
+        annotations = self.get_volume_with_annotations()
+        half = patch_size // 2
+
+        lab = label(annotations)
+        regions = regionprops(lab)
+
+        candidates = []
+        for r in regions:
+            cz, cy, cx = (int(v) for v in r.centroid)
+            cube = self.volume[
+                max(0, cz - half):cz + half,
+                max(0, cy - half):cy + half,
+                max(0, cx - half):cx + half
+            ]
+            candidates.append({
+                'cube': cube,
+                'centroid': (cz, cy, cx),
+                'bbox': r.bbox,
+                'area': r.area,
+                'spacing': self.voxel_size,
+            })
+
+        print(f"{len(candidates)} annotation candidates.")
+        return candidates
