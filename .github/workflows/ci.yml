@@ -1,0 +1,42 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ "ci-cd" ]  # put "main" branch later
+  pull_request:
+    branches: [ "ci-cd" ]  # put "main" branch later
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Building Docker images
+        run: docker compose build
+
+  tests:
+    name: Tests with pytest
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Unit tests (backend)
+        run: docker compose exec -T backend uv run pytest tests/ -v
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
