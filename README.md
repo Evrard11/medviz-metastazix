@@ -10,7 +10,7 @@ Application de detection de nodules pulmonaires avec visualisation 3D
 ```bash
 docker compose up --build
 ```
-L'interface est accessible sur: http://localhost:80
+L'interface est accessible sur: http://localhost:80 or 80
 
 ## Utilisation
 \#FIXME
