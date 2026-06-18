@@ -32,10 +32,11 @@ pip install pylidc pydicom pyradiomics SimpleITK xgboost numpy pandas
 ```python
 candidates = [
     {
-        "cube": np.ndarray,       # (32, 32, 32) en HU
+        "cube": np.ndarray,           # (32, 32, 32) en HU
         "centroid": (z, y, x),
         "bbox": (z1, y1, x1, z2, y2, x2),
         "area": float,
+        "spacing": (sz, sy, sx),      # mm par voxel
     },
     ...
 ]

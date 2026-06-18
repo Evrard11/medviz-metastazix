@@ -30,14 +30,15 @@ def load_nodules():
                         label = 0
                     bbox = nodule[0].bbox()
                     cube = vol[bbox]
-                    results.append((cube, label))
+                    spacing = (scan.pixel_spacing, scan.pixel_spacing, scan.slice_thickness)
+                    results.append((cube, label, spacing))
 
     return results
 
 def build_dataset(nodules: list):
     rows = []
-    for cube, label in nodules:
-        features = extract_features(cube, spacing=(1.0, 1.0, 1.0))
+    for cube, label, spacing in nodules:
+        features = extract_features(cube, spacing)
         features["label"] = label
         rows.append(features)
     return pd.DataFrame(rows)

@@ -11,6 +11,9 @@ def extract_features(cube: np.ndarray, spacing: tuple) -> dict:
     from masking import create_mask
     mask = create_mask(cube)
 
+    if mask.sum() == 0:
+        return {}
+
     image_sitk = cube_to_sitk(cube, spacing)
     mask_sitk = cube_to_sitk(mask.astype(np.float32), spacing)
 
