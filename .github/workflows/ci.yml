@@ -31,7 +31,7 @@ jobs:
         run: docker compose up -d
 
       - name: Unit tests (backend)
-        run: docker compose exec -T backend uv run pytest tests/ -v
+        run: docker compose exec -T backend uv run pytest . -v
 
       - name: Show logs on failure
         if: failure()
