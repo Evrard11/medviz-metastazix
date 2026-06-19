@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ "ci-cd" ]  # put "main" branch later
+    branches: [ "ci-cd", "main" ]  # put "main" branch later
   pull_request:
-    branches: [ "ci-cd" ]  # put "main" branch later
+    branches: [ "ci-cd", "main" ]  # put "main" branch later
 
 permissions:
   contents: read
