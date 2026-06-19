@@ -70,18 +70,18 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: ghcr.io/medviz-backend:latest
+          tags: ghcr.io/evrard11/medviz-backend:latest
 
       - name: Build & push frontend
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: true
-          tags: ghcr.io/medviz-frontend:latest
+          tags: ghcr.io/evrard11/medviz-frontend:latest
 
       - name: Build & push database-backend
         uses: docker/build-push-action@v6
         with:
           context: ./database-backend
           push: true
-          tags: ghcr.io/medviz-database-backend:latest
+          tags: ghcr.io/evrard11/medviz-database-backend:latest
