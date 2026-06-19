@@ -1,7 +1,16 @@
-CREATE TYPE exam_status AS ENUM ('uploaded','processing','segmented','validated','error');
-CREATE TYPE algo_name   AS ENUM ('kmeans','random_forest','xgboost','manual');
+DO $$ BEGIN
+    CREATE TYPE exam_status AS ENUM ('uploaded','processing','segmented','validated','error');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE patients (
+DO $$ BEGIN
+    CREATE TYPE algo_name AS ENUM ('kmeans','random_forest','xgboost','manual');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS patients (
     id            SERIAL PRIMARY KEY,
     anonymized_id VARCHAR(20) UNIQUE NOT NULL,
     first_name    VARCHAR(100),
@@ -11,7 +20,7 @@ CREATE TABLE patients (
     created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE exams (
+CREATE TABLE IF NOT EXISTS exams (
     id              SERIAL PRIMARY KEY,
     patient_id      INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
     dicom_path      TEXT NOT NULL,
@@ -24,7 +33,7 @@ CREATE TABLE exams (
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE segmentations (
+CREATE TABLE IF NOT EXISTS segmentations (
     id                SERIAL PRIMARY KEY,
     exam_id           INT NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
     algorithm         algo_name NOT NULL,
@@ -36,7 +45,7 @@ CREATE TABLE segmentations (
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE nodules (
+CREATE TABLE IF NOT EXISTS nodules (
     id              SERIAL PRIMARY KEY,
     segmentation_id INT NOT NULL REFERENCES segmentations(id) ON DELETE CASCADE,
     centroid_x      NUMERIC(8,2),
@@ -50,6 +59,6 @@ CREATE TABLE nodules (
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_exams_patient ON exams(patient_id);
-CREATE INDEX idx_seg_exam      ON segmentations(exam_id);
-CREATE INDEX idx_nodules_seg   ON nodules(segmentation_id);
+CREATE INDEX IF NOT EXISTS idx_exams_patient ON exams(patient_id);
+CREATE INDEX IF NOT EXISTS idx_seg_exam      ON segmentations(exam_id);
+CREATE INDEX IF NOT EXISTS idx_nodules_seg   ON nodules(segmentation_id);

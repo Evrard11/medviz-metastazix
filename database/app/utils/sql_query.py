@@ -1,6 +1,9 @@
 import psycopg2
 import os
 from fastapi import HTTPException
+from pathlib import Path
+
+SCHEMA_FILE = Path(__file__).parent.parent.parent/"db"/"01_schema.sql"
 
 def open_connection():
     connection, cursor = None, None
@@ -11,8 +14,6 @@ def open_connection():
         raise HTTPException(
             status_code=400, detail=f"fail to connect to the database: {error}"
         )
-
-    create_default_tables(connection, cursor)
     return connection, cursor
 
 def close_connection(connection, cursor):
@@ -20,7 +21,11 @@ def close_connection(connection, cursor):
     connection.close()
 
 
-#TODO add tables
-def create_default_tables(connection, cursor):
-    cursor.execute("""CREATE TABLE IF NOT EXISTS table ();""")
+def init_db():
+    connection, cursor = open_connection()
+
+    create_tables = SCHEMA_FILE.read_text()
+    cursor.execute(create_tables)
     connection.commit()
+
+    close_connection(connection, cursor)
