@@ -70,36 +70,18 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/medviz-backend:latest
+          tags: ghcr.io/medviz-backend:latest
 
       - name: Build & push frontend
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/medviz-frontend:latest
+          tags: ghcr.io/medviz-frontend:latest
 
       - name: Build & push database-backend
         uses: docker/build-push-action@v6
         with:
           context: ./database-backend
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/medviz-database-backend:latest
-    # needs: build
-
-    # steps:
-    #   - uses: actions/checkout@v4
-
-    #   - name: Start services
-    #     run: docker compose up -d
-
-    #   - name: Unit tests (backend)
-    #     run: docker compose exec -T backend uv run pytest . -v
-
-    #   - name: Show logs on failure
-    #     if: failure()
-    #     run: docker compose logs
-
-    #   - name: Stop services
-    #     if: always()
-    #     run: docker compose down
+          tags: ghcr.io/medviz-database-backend:latest
