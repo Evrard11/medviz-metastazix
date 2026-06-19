@@ -1,0 +1,41 @@
+services:
+  frontend:
+    image: ghcr.io/evrard11/medviz-frontend:latest
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - DATABASE_BACKEND_URL=http://database-backend:8001
+
+  backend:
+    image: ghcr.io/evrard11/medviz-backend:latest
+    ports:
+      - "8000:8000"
+    depends_on:
+      - database-backend
+    environment:
+      - DATABASE_BACKEND_URL=http://database-backend:8001
+
+  database-backend:
+    image: ghcr.io/evrard11/medviz-database:latest
+    ports:
+      - "8001:8001"
+    depends_on:
+      - database
+    environment:
+      - DATABASE_URL=postgresql://user:password@database:5432/mydatabase
+
+  database:
+    image: postgres
+    restart: always
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydatabase
+    volumes:
+      - database_data:/var/lib/postgresql
+volumes:
+  database_data:
