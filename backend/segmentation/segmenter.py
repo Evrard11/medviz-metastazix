@@ -19,7 +19,7 @@ class Segmenter:
         # only lung part, derived from total_lung_mask
         self.lung_mask = None
         # area containing potentials nodules
-        self.nodules_segmented = None
+        self.nodules_mask = None
         # list of cubes containing potential nodule
         self.candidates = None
 
@@ -165,7 +165,7 @@ class Segmenter:
         :param patch_size:
         :return:
         """
-        lab = label(self.nodules_segmented)
+        lab = label(self.nodules_mask)
         regions = regionprops(lab)
 
         candidates = []
@@ -202,7 +202,17 @@ class Segmenter:
         nodules_segmented_ostu = self.segment_otsu()
         print("Region growing segmentation ...")
         nodules_segmented_rg = self.segment_region_growing()
-        self.nodules_segmented = self.merge_nodules_segmented(nodules_segmented_ostu, nodules_segmented_rg)
+        print("Merge nodules segmented ...")
+        nodules_mask_roi = self.merge_nodules_segmented(nodules_segmented_ostu, nodules_segmented_rg)
+
+        # convert back to volume total
+        oz, oy, ox = self.get_roi_offset()
+        self.nodules_mask = np.zeros(self.patient.volume.shape, dtype=np.uint8)
+        self.nodules_mask[
+            oz:oz + nodules_mask_roi.shape[0],
+            oy:oy + nodules_mask_roi.shape[1],
+            ox:ox + nodules_mask_roi.shape[2]
+        ] = nodules_mask_roi
 
         print("Selecting Candidates ...")
         self.get_candidates()
@@ -244,7 +254,7 @@ class Segmenter:
         roi_slice = self._to_roi_slice(slice_idx)
         plt.figure(figsize=(6, 6))
         plt.imshow(self.lung[roi_slice], cmap='gray', vmin=-1000, vmax=400)
-        plt.imshow(self.nodules_segmented[roi_slice], alpha=0.4, cmap='Reds')
+        plt.imshow(self.nodules_mask[roi_slice], alpha=0.4, cmap='Reds')
         plt.title(f"Segmentation - tranche {slice_idx} (roi idx {roi_slice})")
         plt.show()
 
@@ -252,11 +262,11 @@ class Segmenter:
         """DEBUG: display all slices with segmentation"""
         z_offset = np.where(self.total_lung_mask)[0].min()
         for roi_slice in range(self.lung.shape[0]):
-            if not self.nodules_segmented[roi_slice].any():
+            if not self.nodules_mask[roi_slice].any():
                 continue
             plt.figure(figsize=(6, 6))
             plt.imshow(self.lung[roi_slice], cmap='gray', vmin=-1000, vmax=400)
-            plt.imshow(self.nodules_segmented[roi_slice], alpha=0.4, cmap='Reds')
+            plt.imshow(self.nodules_mask[roi_slice], alpha=0.4, cmap='Reds')
             plt.title(f"Segmentation - roi idx {roi_slice} (volume idx {roi_slice + z_offset})")
             plt.show()
 
@@ -272,7 +282,7 @@ class Segmenter:
             half = 16
 
             # Extract cube
-            patch_mask = self.nodules_segmented[
+            patch_mask = self.nodules_mask[
                 max(0, cz - half):cz + half,
                 max(0, cy - half):cy + half,
                 max(0, cx - half):cx + half
@@ -294,28 +304,24 @@ class Segmenter:
     def match_candidates(
             annotations: list[dict],
             candidates: list[dict],
-            roi_offset: tuple[int, int, int],
             max_dist: float = 15.0
     ) -> list[tuple[dict, dict]]:
         """
         1-to-1 matches btw annotation and segmentation within a max distance
         :return: list of (annotation, matched_candidate) pairs.
         """
-        oz, oy, ox = roi_offset
         # set of candidates idx already paired
         used = set()
         pairs = []
 
         for ann in annotations:
             az, ay, ax = ann['centroid']
-            # to roi coordinates like seg candidates
-            az, ay, ax = az - oz, ay - oy, ax - ox
-
             min_dist, min_idx = float('inf'), None
             for i, cand in enumerate(candidates):
                 if i in used:
                     continue
                 cz, cy, cx = cand['centroid']
+                # euclidian dist
                 dist = np.sqrt((az - cz) ** 2 + (ay - cy) ** 2 + (ax - cx) ** 2)
                 if dist < min_dist:
                     min_dist, min_idx = dist, i
@@ -330,31 +336,19 @@ class Segmenter:
     def compute_iou_3d(
             ann: dict,
             cand: dict,
-            ann_volume_mask: np.ndarray,
+            ann_mask: np.ndarray,
             seg_mask: np.ndarray,
-            roi_offset: tuple[int, int, int]
     ) -> float:
         """
         IoU btw annotation and segmention nodule on region
         """
-        oz, oy, ox = roi_offset
-
         az1, ay1, ax1, az2, ay2, ax2 = ann['bbox']
-        # to roi coordinates like seg candidates
-        az1, ay1, ax1 = az1 - oz, ay1 - oy, ax1 - ox
-        az2, ay2, ax2 = az2 - oz, ay2 - oy, ax2 - ox
-
         cz1, cy1, cx1, cz2, cy2, cx2 = cand['bbox']
 
         z1, y1, x1 = min(az1, cz1), min(ay1, cy1), min(ax1, cx1)
         z2, y2, x2 = max(az2, cz2), max(ay2, cy2), max(ax2, cx2)
 
-        # to roi coordinates like seg candidates
-        ann_region = ann_volume_mask[
-            z1 + oz:z2 + oz,
-            y1 + oy:y2 + oy,
-            x1 + ox:x2 + ox
-        ].astype(bool)
+        ann_region = ann_mask[z1:z2, y1:y2, x1:x2].astype(bool)
         seg_region = seg_mask[z1:z2, y1:y2, x1:x2].astype(bool)
 
         min_shape = tuple(min(a, b) for a, b in zip(ann_region.shape, seg_region.shape))
