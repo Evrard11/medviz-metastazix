@@ -9,6 +9,7 @@ PATIENT_IDS = ['LIDC-IDRI-0001', 'LIDC-IDRI-0003']
 
 ROOT = Path(__file__).parent.parent
 
+
 @pytest.fixture(scope="session")
 def dl():
     dl = LidcIdriDownloader(str(ROOT / "LIDC_data"), PATIENT_IDS)
@@ -18,11 +19,13 @@ def dl():
         dl.download()
     return dl
 
+
 @pytest.fixture(scope="session", params=PATIENT_IDS)
 def patient(request, dl):
     p = PatientManager(request.param, dl)
     p.init()
     return p
+
 
 @pytest.fixture(scope="session")
 def segmenter(patient):
@@ -30,15 +33,14 @@ def segmenter(patient):
     seg.run()
     return seg
 
+
 @pytest.fixture(scope="session")
-def matching(patient, segmenter):
+def matches(patient, segmenter):
     annotations_mask = patient.get_volume_with_annotations()
     ann_candidates = patient.get_annotation_candidates()
-    offset = segmenter.get_roi_offset()
-    pairs = Segmenter.match_candidates(ann_candidates, segmenter.candidates, roi_offset=offset)
+    pairs = Segmenter.match_candidates(ann_candidates, segmenter.candidates)
     return dict(
         ann_candidates=ann_candidates,
-        annotations_mask=annotations_mask,
+        ann_mask=annotations_mask,
         pairs=pairs,
-        offset=offset,
     )
