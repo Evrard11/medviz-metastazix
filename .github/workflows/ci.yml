@@ -83,6 +83,6 @@ jobs:
       - name: Build & push database-backend
         uses: docker/build-push-action@v6
         with:
-          context: ./database-backend
+          context: ./database
           push: true
-          tags: ghcr.io/evrard11/medviz-database-backend:latest
+          tags: ghcr.io/evrard11/medviz-database:latest
