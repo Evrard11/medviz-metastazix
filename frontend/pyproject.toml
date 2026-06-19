@@ -10,10 +10,13 @@ authors = [
     {name = "elie.dalmas"},
     {name = "alex.dreau"}
 ]
+
 dependencies = [
     "dash",
-    "requests",
-    "pandas",
     "dash-mantine-components",
-    "dash-iconify"
+    "dash-iconify",
+    "dash-vtk",
+    "plotly",
+    "numpy",
+    "requests",
 ]

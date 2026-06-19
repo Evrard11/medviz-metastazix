@@ -227,3 +227,6 @@ __marimo__/
 
 # UV
 uv.lock
+
+#Dicom
+dicom/

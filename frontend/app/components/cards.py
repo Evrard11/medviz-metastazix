@@ -1,6 +1,11 @@
 import dash_mantine_components as dmc
+from dash import html
+from dash_iconify import DashIconify
 
 def patient_card(patient):
+    """
+    Generate a UI card displaying basic patient information.
+    """
     initial = patient["name"][0]
     return dmc.Card(
         withBorder=True,
@@ -26,23 +31,45 @@ def patient_card(patient):
     )
 
 def anomaly_card(anomaly):
-    return dmc.Card(
-        withBorder=True,
-        shadow="sm",
-        radius="md",
-        p="sm",
-        style={"borderLeft": "4px solid var(--mantine-color-red-6)"},
+    """
+    Generate an interactive UI card displaying details of a specific anomaly, 
+    including its location, size, and associated slice.
+    """
+    a_id = anomaly.get('id', 'unknown')
+    
+    return html.Div(
+        id={'type': 'anomaly-card', 'index': a_id},
+        n_clicks=0,
         children=[
-            dmc.Group(
-                justify="space-between",
-                mb="xs",
+            dmc.Card(
+                withBorder=True,
+                shadow="sm",
+                radius="md",
+                p="sm",
+                style={"borderLeft": "4px solid var(--mantine-color-red-6)", "cursor": "pointer"},
                 children=[
-                    dmc.Badge(anomaly['id'], color="red", variant="light", size="sm"),
-                    dmc.Text(f"Slice {anomaly['slice']}", size="sm", c="cyan", fw=500)
+                    dmc.Group(
+                        justify="space-between",
+                        mb="xs",
+                        children=[
+                            dmc.Badge(a_id, color="red", variant="light", size="sm"),
+                            dmc.Group(
+                                gap="xs",
+                                children=[
+                                    dmc.Text(f"Slice {anomaly.get('slice', 'N/A')}", size="sm", c="cyan", fw=500),
+                                    dmc.ActionIcon(
+                                        DashIconify(icon="radix-icons:trash"),
+                                        size="sm", color="red", variant="subtle",
+                                        id={'type': 'delete-anomaly', 'index': a_id}
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                    dmc.Text(f"Localisation: {anomaly.get('loc', 'Dessin manuel')}", size="sm"),
+                    dmc.Text(f"Taille: {anomaly.get('size', 'N/A')}", size="sm"),
+                    dmc.Text(f"{anomaly.get('note', '')}", size="xs", c="dimmed", fs="italic", mt="xs")
                 ]
-            ),
-            dmc.Text(f"Localisation: {anomaly['loc']}", size="sm"),
-            dmc.Text(f"Taille: {anomaly['size']}", size="sm"),
-            dmc.Text(f"{anomaly['note']}", size="xs", c="dimmed", fs="italic", mt="xs")
+            )
         ]
     )
