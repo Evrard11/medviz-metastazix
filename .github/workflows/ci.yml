@@ -48,6 +48,43 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: uv run pytest . -v
+
+  deploy:
+    name: Publish images
+    runs-on: ubuntu-latest
+    needs: [unit-tests, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connexion to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/medviz-backend:latest
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/medviz-frontend:latest
+
+      - name: Build & push database-backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./database-backend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/medviz-database-backend:latest
     # needs: build
 
     # steps:
