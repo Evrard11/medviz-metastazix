@@ -3,7 +3,7 @@ import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from segmentation.downloader import LidcIdriDownloader
+from .downloader import LidcIdriDownloader
 from skimage.measure import label, regionprops
 
 class PatientManager:
@@ -13,10 +13,15 @@ class PatientManager:
     dicom_files = None
     seg_metas = None
 
-    def __init__(self, pid, dl: LidcIdriDownloader):
-        self.patient_path = dl.get_patient_path(pid)
+    def __init__(self, pid="", dl: LidcIdriDownloader=None):
+        if dl is None:
+            self.patient_path = None
+        else:
+            self.patient_path = dl.get_patient_path(pid)
 
-    def init(self):
+    def init(self, patient_path=None):
+        if patient_path is not None:
+            self.patient_path = patient_path
         ct_path = None
         seg_paths = []
         # Get CT and SEG files

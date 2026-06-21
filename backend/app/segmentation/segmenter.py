@@ -2,7 +2,7 @@ import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
 
-from segmentation.patient_manager import PatientManager
+from .patient_manager import PatientManager
 from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops
 import SimpleITK as sitk
