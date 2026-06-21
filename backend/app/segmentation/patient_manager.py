@@ -7,6 +7,10 @@ from .downloader import LidcIdriDownloader
 from skimage.measure import label, regionprops
 
 class PatientManager:
+    """
+    PatientManager class
+    Extract volume + annotations from patient dicom directory
+    """
     # volume format: (Z, Y, X)
     volume : np.ndarray = None
     seg_masks: list[np.ndarray] = None
@@ -66,7 +70,7 @@ class PatientManager:
         """
         Replace SEG mask on volume
         :param id: i-th SEG
-        :return:
+        :return: volume with annotations
         """
         seg_ds = self.seg_metas[id]
         seg_mask = self.seg_masks[id]
@@ -107,6 +111,7 @@ class PatientManager:
         return annotations
 
     def display_volume_with_annotations(self):
+        """DEBUG: Show all images with annotations"""
         annotations = self.get_volume_with_annotations()
 
         for z in range(self.volume.shape[0]):

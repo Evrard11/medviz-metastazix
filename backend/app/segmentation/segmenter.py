@@ -89,7 +89,7 @@ class Segmenter:
     def segment_otsu(self):
         """
         Nice work on big objects
-        :return:
+        :return: nodules mask
         """
         # get threshold from otsu
         bool_roi = self.lung[self.lung_mask == 1]
@@ -115,9 +115,9 @@ class Segmenter:
     def segment_region_growing(self, lower=-100, upper=400):
         """
         Nice work on small objects
-        :param lower:
-        :param upper:
-        :return:
+        :param lower: HU lower bound
+        :param upper: HU upper bound
+        :return: nodules mask
         """
 
         sitk_img = sitk.GetImageFromArray(self.lung.astype(np.float32))
@@ -152,7 +152,7 @@ class Segmenter:
         print(f"{len(regionprops(label(res)))} composants region growing")
         return res
 
-    def merge_nodules_segmented(self, mask1, mask2):
+    def merge_nodules_segmented(self, mask1:np.array, mask2:np.array):
         return np.logical_or(mask1, mask2).astype(np.uint8)
 
     # endregion Segmentation
@@ -161,9 +161,9 @@ class Segmenter:
 
     def get_candidates(self, patch_size=32):
         """
-        Create a list of cube center on composant
-        :param patch_size:
-        :return:
+        Create a list of cube center on component
+        :param patch_size: size of patch
+        :return: list of candidates in nodules mask post-segmentation
         """
         lab = label(self.nodules_mask)
         regions = regionprops(lab)
@@ -228,12 +228,12 @@ class Segmenter:
         z_idx, y_idx, x_idx = np.where(self.total_lung_mask)
         return z_idx.min(), y_idx.min(), x_idx.min()
 
-    def _to_roi_slice(self, slice_idx):
+    def _to_roi_slice(self, slice_idx:int):
         """offset due to slices reduction"""
         z_offset = np.where(self.total_lung_mask)[0].min()
         return slice_idx - z_offset
 
-    def display_lung_mask(self, slice_idx):
+    def display_lung_mask(self, slice_idx:int):
         """DEBUG: display lung mask"""
         plt.figure(figsize=(6, 6))
         plt.imshow(self.patient.volume[slice_idx], cmap='gray', vmin=-1000, vmax=400)
@@ -241,7 +241,7 @@ class Segmenter:
         plt.title(f"Masque pulmonaire - tranche {slice_idx}")
         plt.show()
 
-    def display_roi(self, slice_idx):
+    def display_roi(self, slice_idx:int):
         """DEBUG: display roi slice"""
         roi_slice = self._to_roi_slice(slice_idx)
         plt.figure(figsize=(6, 6))
@@ -249,7 +249,7 @@ class Segmenter:
         plt.title(f"Slice {slice_idx} (roi idx {roi_slice})")
         plt.show()
 
-    def display_segmentation(self, slice_idx):
+    def display_segmentation(self, slice_idx:int):
         """DEBUG: display segmentation slice"""
         roi_slice = self._to_roi_slice(slice_idx)
         plt.figure(figsize=(6, 6))
