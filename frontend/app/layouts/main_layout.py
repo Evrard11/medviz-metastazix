@@ -2,7 +2,7 @@ import dash_mantine_components as dmc
 from dash_iconify import DashIconify
 from data.db_client import get_patients
 from components.cards import patient_card, anomaly_card
-from dash import dcc
+from dash import dcc, html
 import plotly.express as px
 import numpy as np
 import dash_vtk
@@ -16,20 +16,60 @@ fig_2d.update_layout(
     newshape=dict(line_color="cyan", opacity=0.8, line_width=2),
     margin=dict(l=0, r=0, b=0, t=0),
     coloraxis_showscale=False,
-    xaxis=dict(showticklabels=False),
-    yaxis=dict(showticklabels=False)
+    uirevision='constant'
+)
+fig_2d.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, visible=False)
+fig_2d.update_yaxes(showticklabels=False, showgrid=False, zeroline=False, visible=False)
+
+patient_modal = dmc.Modal(
+    title="Nouveau Patient",
+    id="patient-modal",
+    zIndex=10000,
+    children=[
+        dmc.TextInput(label="Nom Complet", id="patient-name-input", placeholder="Ex: Jean Dupont"),
+        dmc.NumberInput(label="Âge", id="patient-age-input", value=45, min=0, max=120),
+        dmc.Select(
+            label="Sexe",
+            id="patient-sex-input",
+            data=[
+                {"value": "M", "label": "Homme"},
+                {"value": "F", "label": "Femme"},
+                {"value": "O", "label": "Autre"}
+            ],
+            value="M",
+            comboboxProps={"zIndex": 10005},
+            style={"position": "relative", "zIndex": 10005}
+        ),
+        dmc.Button("Créer le patient et Analyser", id="submit-patient-btn", fullWidth=True, mt="md", color="cyan")
+    ]
 )
 
-patient_cards = []
-patients = get_patients()
-for p in patients:
-    patient_cards.append(patient_card(p))
+report_modal = dmc.Modal(
+    title="Rapport Médical",
+    id="report-modal",
+    size="lg",
+    zIndex=10000,
+    children=[
+        html.Div(id="report-content", style={"padding": "10px"}),
+        dmc.Group(
+            justify="flex-end",
+            mt="xl",
+            children=[
+                dmc.Button("Fermer", id="close-report-btn", variant="default"),
+                dmc.Button("Imprimer (PDF)", id="print-report-btn", color="cyan", leftSection=DashIconify(icon="radix-icons:printer"))
+            ]
+        )
+    ]
+)
+
 left_column = dmc.Stack(
     w=320,
     h="100vh",
     p="md",
     style={"borderRight": "1px solid var(--mantine-color-default-border)", "backgroundColor": "var(--mantine-color-body)"},
     children=[
+        patient_modal,
+        report_modal,
         dmc.Title("Radiologie 3D", order=2, c="cyan", mb="sm"),
         dmc.TextInput(
             placeholder="Rechercher un patient...",
@@ -37,10 +77,22 @@ left_column = dmc.Stack(
             radius="md",
             mb="xs"
         ),
+        dcc.Upload(
+            id='upload-dicom',
+            children=dmc.Button(
+                "Importer DICOM (ZIP)",
+                fullWidth=True,
+                leftSection=DashIconify(icon="radix-icons:upload"),
+                color="cyan",
+                variant="outline",
+                mb="md"
+            ),
+            multiple=False
+        ),
         dmc.ScrollArea(
             offsetScrollbars=True,
             flex=1,
-            children=dmc.Stack(gap="xs", children=patient_cards)
+            children=dmc.Stack(gap="xs", id="patients-list", children=[])
         )
     ]
 )
@@ -51,33 +103,52 @@ center_column = dmc.Stack(
     p="md",
     gap="md",
     children=[
+        dcc.Store(id='patients-store', storage_type="session", data=[]),
+        dcc.Store(id='current-3d-model', data=None),
         dcc.Store(id='annotations-store', data=[]),
         dcc.Store(id='selected-anomaly-store', data=None),
-        dmc.Group(
-            flex=1,
-            align="stretch",
-            gap="md",
-            wrap="nowrap",
+        dcc.Store(id='upload-content-store', data=None),
+        dcc.Loading(
+            id="loading-3d",
+            type="circle",
+            color="cyan",
+            parent_style={"flex": 1, "display": "flex", "flexDirection": "column", "minHeight": 0},
+            style={"flex": 1, "display": "flex", "flexDirection": "column", "minHeight": 0},
             children=[
+                dmc.Group(
+                    flex=1,
+                    align="stretch",
+                    gap="md",
+                    wrap="nowrap",
+                    children=[
                 #3D VTK Card
                 dmc.Card(
                     withBorder=True, radius="lg", flex=1,
-                    style={"backgroundColor": "#000", "position": "relative", "display": "flex", "alignItems": "center", "justifyContent": "center"},
+                    style={"backgroundColor": "#000", "position": "relative", "display": "flex", "alignItems": "stretch", "justifyContent": "stretch", "padding": 0},
                     children=[
+                        # 3D Interactive Badge
                         dmc.Stack(
                             gap=2,
-                            style={"position": "absolute", "top": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)"},
+                            style={"position": "absolute", "bottom": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)", "zIndex": 10, "pointerEvents": "none"},
                             children=[
                                 dmc.Text("Modèle 3D interactif", fw=700, c="cyan", size="sm"),
-                                dmc.Text("Tourner avec la souris", c="dimmed", size="xs")
+                                dmc.Text("Tourner le modèle avec la souris", c="dimmed", size="xs")
                             ]
                         ),
-                        dash_vtk.View(
-                            id="vtk-view",
+                        html.Div(
+                            id="vtk-container",
+                            style={"width": "100%", "height": "100%", "flex": 1, "display": "flex"},
                             children=[
-                                dash_vtk.GeometryRepresentation(
+                                dash_vtk.View(
+                                    id="vtk-view",
+                                    background=[0, 0, 0],
+                                    style={"width": "100%", "height": "100%", "flex": 1},
                                     children=[
-                                        dash_vtk.PolyData(points=lung_points, polys=lung_polys)
+                                        dash_vtk.GeometryRepresentation(
+                                            children=[
+                                                dash_vtk.PolyData(points=lung_points, polys=lung_polys)
+                                            ]
+                                        )
                                     ]
                                 )
                             ]
@@ -89,27 +160,59 @@ center_column = dmc.Stack(
                     withBorder=True, radius="lg", flex=1, p=0,
                     style={"backgroundColor": "#000", "position": "relative", "display": "flex", "overflow": "hidden"},
                     children=[
-                        dcc.Graph(
-                            id='2d-viewer-graph',
-                            figure=fig_2d,
-                            style={"width": "100%", "height": "100%", "flex": 1},
-                            config={
-                                "displayModeBar": True,
-                                "modeBarButtonsToAdd": ["drawclosedpath", "drawcircle", "drawrect", "eraseshape"],
-                                "displaylogo": False
-                            }
-                        ),
-                        dmc.Stack(
-                            gap=2,
-                            style={"position": "absolute", "top": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)", "zIndex": 10},
+                        html.Div(
+                            id="2d-empty-state",
+                            style={"width": "100%", "height": "100%", "display": "flex", "padding": "20px", "flex": 1},
                             children=[
-                                dmc.Text("Scan 2D", fw=700, c="cyan", size="sm"),
-                                dmc.Text("Tracé manuel activé", c="dimmed", size="xs")
+                                dcc.Upload(
+                                    id='upload-dicom-2d',
+                                    children=dmc.Stack(
+                                        align="center", justify="center", h="100%", w="100%", gap="xs",
+                                        children=[
+                                            DashIconify(icon="radix-icons:upload", width=64, color="var(--mantine-color-cyan-6)"),
+                                            dmc.Text("Glissez et déposez un fichier DICOM (ZIP) ici", fw=500, size="lg"),
+                                            dmc.Text("ou cliquez pour importer", size="sm", c="dimmed")
+                                        ]
+                                    ),
+                                    style={
+                                        'width': '100%', 'height': '100%', 'borderWidth': '2px', 'flex': 1,
+                                        'borderStyle': 'dashed', 'borderColor': 'var(--mantine-color-cyan-8)',
+                                        'borderRadius': '12px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+                                        'cursor': 'pointer', 'backgroundColor': 'rgba(0, 255, 255, 0.05)'
+                                    },
+                                    multiple=False
+                                )
+                            ]
+                        ),
+                        html.Div(
+                            id="2d-viewer-container",
+                            style={"width": "100%", "height": "100%", "display": "none", "flex": 1},
+                            children=[
+                                dcc.Graph(
+                                    id='2d-viewer-graph',
+                                    figure=fig_2d,
+                                    style={"width": "100%", "height": "100%", "flex": 1},
+                                    config={
+                                        "displayModeBar": True,
+                                        "modeBarButtonsToAdd": ["drawclosedpath", "drawcircle", "drawrect", "eraseshape"],
+                                        "displaylogo": False
+                                    }
+                                ),
+                                dmc.Stack(
+                                    gap=2,
+                                    style={"position": "absolute", "top": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)", "zIndex": 10},
+                                    children=[
+                                        dmc.Text("Scan 2D", fw=700, c="cyan", size="sm"),
+                                        dmc.Text("Tracé manuel activé", c="dimmed", size="xs")
+                                    ]
+                                )
                             ]
                         )
                     ]
                 )
             ]
+        )
+        ]
         ),
         dmc.Card(
             withBorder=True, radius="md", p="md",
@@ -140,16 +243,24 @@ right_column = dmc.Stack(
     style={"borderLeft": "1px solid var(--mantine-color-default-border)", "backgroundColor": "var(--mantine-color-body)"},
     children=[
         dmc.Title("Analyse Manuelle", order=2, mb="xs"),
+        dmc.TextInput(id="anomaly-search-input", placeholder="Rechercher par nom ou slice...", leftSection=DashIconify(icon="radix-icons:magnifying-glass"), mb="sm"),
         dmc.Text("Anomalies Détectées", id="anomalies-title", fw=700, mt="sm", mb="xs"),
-        dmc.Stack(gap="xs", id="anomalies-list", children=[]),
+        dmc.ScrollArea(
+            h=350,
+            type="auto",
+            children=[
+                dmc.Stack(gap="xs", id="anomalies-list", children=[])
+            ]
+        ),
         dmc.Text("Tracés et Mesures", id="traces-title", fw=700, mt="sm", mb="xs"),
         dmc.Box(
-            p="xl",
+            id="traces-container",
+            p="md",
             style={"border": "1px dashed var(--mantine-color-default-border)", "borderRadius": "8px", "textAlign": "center", "backgroundColor": "rgba(255,255,255,0.02)"},
             children=dmc.Text("Aucun tracé en cours", c="dimmed", size="sm")
         ),
         dmc.Box(flex=1),
-        dmc.Button("Rapport Médical", color="cyan", size="lg", radius="md", fullWidth=True, variant="filled")
+        dmc.Button("Rapport Médical", id="open-report-btn", color="cyan", size="lg", radius="md", fullWidth=True, variant="filled")
     ]
 )
 
