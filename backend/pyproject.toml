@@ -29,6 +29,7 @@ dependencies = [
     "pip>=26.1.2",
     "pytest>=9.1.0",
     "pyradiomics",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv.sources]
@@ -36,3 +37,4 @@ pyradiomics = { git = "https://github.com/AIM-Harvard/pyradiomics", rev = "8ed57
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+addopts = "-n auto -v"

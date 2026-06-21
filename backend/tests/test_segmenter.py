@@ -1,4 +1,4 @@
-from segmentation.segmenter import Segmenter
+from app.segmentation.segmenter import Segmenter
 
 
 class TestSegmenter:
@@ -6,7 +6,7 @@ class TestSegmenter:
         pairs = matches['pairs']
         ann_candidates = matches['ann_candidates']
         recall = len(pairs) / len(ann_candidates)
-        assert recall == 1., f"{len(ann_candidates) - len(pairs)} annotations unmatched"
+        assert recall == 1., f"{len(pairs)} / {len(ann_candidates)} annotations unmatched"
 
     def test_iou(self, matches, segmenter):
         iou_scores = [
