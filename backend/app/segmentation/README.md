@@ -34,9 +34,7 @@ Deux méthodes fusionnées :
 | Méthode        | Principe                                     | Point fort     |
 |----------------|----------------------------------------------|----------------|
 | Otsu           | Seuil global sur les HU intra-pulmonaires    | Larges nodules |
-| Region Growing | Croissance depuis seeds entre [-100, 400] HU | Petits nodules |
-
-Les masques filtrent les composantes par aire (50 < area < 10 000 voxels) pour éliminer les vaisseaux et la trachée.
+| Region Growing | Croissance depuis seeds entre [-700, 400] HU | Petits nodules |
 
 ### 4. Conversion en coordonnées volume
 
