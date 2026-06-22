@@ -142,30 +142,49 @@ def register_callbacks():
             return no_update
         
         shapes = relayout_data['shapes']
+        graph_shape_names = [s.get('name') for s in shapes if s.get('name')]
+        
         new_data = []
         for ann in store_data:
             if ann.get('slice') != current_slice:
                 new_data.append(ann)
+            else:
+                if ann.get('id') in graph_shape_names or ann.get('loc') == 'Backend':
+                    new_data.append(ann)
         
         for shape in shapes:
             shape_type = shape.get('type')
             if shape_type in ['path', 'circle', 'rect', 'line']:
-                ann = {
-                    'id': f"MANUAL-{str(uuid.uuid4())[:8].upper()}",
-                    'slice': current_slice,
-                    'type': shape_type,
-                    'loc': 'Dessin manuel',
-                    'size': 'N/A',
-                    'note': ''
-                }
-                if shape_type in ['path', 'line']:
-                    ann['path'] = shape.get('path', '')
+                ann_id = shape.get('name')
+                
+                if ann_id:
+                    for ann in new_data:
+                        if ann.get('id') == ann_id and ann.get('loc') != 'Backend':
+                            if shape_type in ['path', 'line']:
+                                ann['path'] = shape.get('path', '')
+                            else:
+                                ann['x0'] = shape.get('x0')
+                                ann['y0'] = shape.get('y0')
+                                ann['x1'] = shape.get('x1')
+                                ann['y1'] = shape.get('y1')
+                            break
                 else:
-                    ann['x0'] = shape.get('x0')
-                    ann['y0'] = shape.get('y0')
-                    ann['x1'] = shape.get('x1')
-                    ann['y1'] = shape.get('y1')
-                new_data.append(ann)
+                    new_ann = {
+                        'id': f"MANUAL-{str(uuid.uuid4())[:8].upper()}",
+                        'slice': current_slice,
+                        'type': shape_type,
+                        'loc': 'Tracés manuels',
+                        'size': 'N/A',
+                        'note': ''
+                    }
+                    if shape_type in ['path', 'line']:
+                        new_ann['path'] = shape.get('path', '')
+                    else:
+                        new_ann['x0'] = shape.get('x0')
+                        new_ann['y0'] = shape.get('y0')
+                        new_ann['x1'] = shape.get('x1')
+                        new_ann['y1'] = shape.get('y1')
+                    new_data.append(new_ann)
         return new_data
 
     @app.callback(
@@ -206,7 +225,8 @@ def register_callbacks():
                     type=ann.get('type', 'path'),
                     line_color=color,
                     opacity=0.8,
-                    line_width=2
+                    line_width=2,
+                    name=ann['id']
                 )
                 if ann.get('type') in ['path', 'line'] or 'path' in ann:
                     shape_dict['path'] = ann.get('path', '')
@@ -403,6 +423,9 @@ def register_callbacks():
         search_text = (search_text or "").lower()
         
         for ann in store_data:
+            if ann.get('loc') == 'Tracés manuels':
+                continue
+                
             ann_name = ann.get('id', '').lower()
             ann_slice = str(ann.get('slice', ''))
             
@@ -588,16 +611,19 @@ def register_callbacks():
     )
     def update_traces_info(annotations):
         import dash_mantine_components as dmc
-        manual_traces = [a for a in annotations if a.get('loc') == 'Dessin manuel']
+        from components.cards import anomaly_card
+        
+        manual_traces = [a for a in annotations if a.get('loc') == 'Tracés manuels']
         if not manual_traces:
             return dmc.Text("Aucun tracé manuel en cours", c="dimmed", size="sm")
         
+        cards = []
+        for ann in manual_traces:
+            cards.append(anomaly_card(ann))
+            
         return dmc.Stack(
             gap="xs",
-            children=[
-                dmc.Text(f"{len(manual_traces)} tracés manuels", fw=500, size="sm"),
-                dmc.Text("Volume total estimé : Non calculé", size="xs", c="dimmed")
-            ]
+            children=cards
         )
 
     @app.callback(
@@ -626,7 +652,7 @@ def register_callbacks():
         patient = patients[-1] if patients else {"name": "Inconnu", "age": "N/A", "sex": "N/A"}
         
         auto_anomalies = [a for a in annotations if a.get('loc') == 'Backend']
-        manual_traces = [a for a in annotations if a.get('loc') == 'Dessin manuel']
+        manual_traces = [a for a in annotations if a.get('loc') == 'Tracés manuels']
         
         content = dmc.Stack(
             gap="sm",

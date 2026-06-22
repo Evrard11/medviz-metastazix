@@ -72,7 +72,7 @@ def anomaly_card(anomaly):
                             )
                         ]
                     ),
-                    dmc.Text(f"Origine: {'Détection Automatique (IA)' if anomaly.get('loc') == 'Backend' else anomaly.get('loc', 'Dessin manuel')}", size="sm"),
+                    dmc.Text(f"Origine: {'Détection Automatique (IA)' if anomaly.get('loc') == 'Backend' else anomaly.get('loc', 'Tracés manuels')}", size="sm"),
                     dmc.Text(f"Taille: {anomaly.get('size', 'N/A')}", size="sm"),
                     dmc.Text(f"{anomaly.get('note', '')}", size="xs", c="dimmed", fs="italic", mt="xs")
                 ]
