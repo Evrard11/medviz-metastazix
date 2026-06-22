@@ -20,21 +20,22 @@ Il consiste globalement à prendre en entrée un volume CT (Z, Y, X) en HU et re
 - Suppression du fond (composante connexe touchant le coin [0,0,0])
 - Remplissage des trous
 - Conservation des 2 plus grandes composantes connexes (poumons)
-- Fermeture asymétrique (3, 5) pour inclure les nodules proches des bords.
+- Dilatation (3 it.) pour inclure les nodules pleuraux, érosion (5 it.) pour retirer la paroi
 
 ### 2. Extraction des poumons seuls
 
-Crop du volume et du masque au bbox des poumons pour les segmentations. 
+Crop du volume et du masque au bbox des poumons pour les segmentations.
 Un offset ZYX est conservé pour la conversion vers les coordonnées globales.
 
 ### 3. Segmentation
 
-Deux méthodes fusionnées :
+3 méthodes fusionnées :
 
-| Méthode        | Principe                                     | Point fort     |
-|----------------|----------------------------------------------|----------------|
-| Otsu           | Seuil global sur les HU intra-pulmonaires    | Larges nodules |
-| Region Growing | Croissance depuis seeds entre [-700, 400] HU | Petits nodules |
+| Méthode              | Principe                       | Point fort              |
+|----------------------|--------------------------------|-------------------------|
+| Otsu                 | Seuil global intra-pulmonaires | Larges nodules denses   |
+| Region Growing GGO   | seeds > -400 / [-600, 0]       | Nodules en verre dépoli |
+| Region Growing Solid | seeds > -50 / [-200, 400]      | Nodules solides         |
 
 ### 4. Conversion en coordonnées volume
 
@@ -43,7 +44,15 @@ Le masque des nodules est convertie dans un volume de la taille du CT original p
 ### 5. Extraction des candidats
 
 Chaque composante connexe du masque est un candidat :
-- **centroid** : centre de la composante
+- **centroid** : centre de la composante (Z, Y, X)
 - **cube** : 32×32×32 autour du centroïd
 - **bbox** : bounding box
+- **area** : volume en voxels
 - **spacing** : taille de voxel en mm
+
+## Evaluations
+
+| Métrique | Description                                              |
+|----------|----------------------------------------------------------|
+| Pairs    | match 1-1 par distance de centroid                       |
+| IoU      | Intersection d'unions sur la région englobante de 2 bbox |
