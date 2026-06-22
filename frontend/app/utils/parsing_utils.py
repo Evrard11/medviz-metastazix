@@ -1,17 +1,21 @@
 import re
 
-def svg_path_to_vtk_polydata(path_str, z_slice):
+def svg_path_to_vtk_polydata(path_str, z_slice, spacing=None):
     """
     Convertit un path SVG (M x,y L x,y Z) issu de plotly en coordonnées 3D pour VTK.
     """
+    if spacing is None:
+        spacing = [1.0, 1.0, 1.0]
+
     points = []
     # Find pairs of coordinates following 'M' or 'L' commands
     matches = re.findall(r'[ML]\s*([\d\.-]+),([\d\.-]+)', path_str)
     
     for x_str, y_str in matches:
-        x = float(x_str)
-        y = float(y_str)
-        points.extend([x, y, z_slice])
+        x = float(x_str) * spacing[0]
+        y = float(y_str) * spacing[1]
+        z = z_slice * spacing[2]
+        points.extend([x, y, z])
         
     num_points = len(matches)
     # Format VTK poly

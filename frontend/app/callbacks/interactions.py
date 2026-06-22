@@ -329,7 +329,7 @@ def register_callbacks():
                     path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
 
                 if path_str:
-                    pts, polys = svg_path_to_vtk_polydata(path_str, ann['slice'] - 1)
+                    pts, polys = svg_path_to_vtk_polydata(path_str, ann['slice'] - 1, spacing)
                     patch.append(
                         dash_vtk.GeometryRepresentation(
                             property={"color": color, "lineSegment": True, "lineWidth": 3},
