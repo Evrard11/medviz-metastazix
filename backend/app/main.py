@@ -1,11 +1,11 @@
-import os
-import pathlib
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from app.classification.classifier import load_model
 from app.classification.pipeline import predict_candidates
 from app import db_client
-BASE_DIR = pathlib.Path(__file__).parent
+from app.segmentation import Segmenter, PatientManager
+BASE_DIR = Path(__file__).parent
 PKL_PATH = BASE_DIR / "classification" / "modele_xgb.pkl"
 
 model = None
@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
         model = load_model(str(PKL_PATH))
         print("Model loaded")
     else:
-        print("No model found, /predict unavailable")
+        print("No model found, /analyse unavailable")
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -26,20 +26,25 @@ app = FastAPI(lifespan=lifespan)
 async def get_hello():
     return "hello world!"
 
-@app.post("/predict")
-def predict(data: dict):
-    if model is None:
-        raise HTTPException(503, "Model not loaded")
-    return predict_candidates(data["candidates"], model)
-
 @app.post("/analyze/{exam_id}")
-def analyze(exam_id: int, data: dict):
+def analyze(exam_id: int):
     if model is None:
         raise HTTPException(503, "Model not loaded")
 
     exam = db_client.get_exam(exam_id)   # lève une erreur HTTP si absent
 
-    results = predict_candidates(data["candidates"], model)
+    patient_path = Path(exam.dicom_path)
+    if not patient_path.exists():
+        raise HTTPException(status_code=404, detail=f"No such patient directory at {patient_path}")
+
+    # Segmentation
+    patient = PatientManager()
+    patient.init(patient_path)
+    seg = Segmenter(patient)
+    seg.run()
+
+    # Classification
+    results = predict_candidates(seg.candidates, model)
 
     persisted = db_client.persist_analysis(
         exam_id=exam_id,

@@ -1,11 +1,13 @@
 from pathlib import Path
 
 import pytest
-from segmentation.downloader import LidcIdriDownloader
-from segmentation.patient_manager import PatientManager
-from segmentation.segmenter import Segmenter
+from app.segmentation.downloader import LidcIdriDownloader
+from app.segmentation.patient_manager import PatientManager
+from app.segmentation.segmenter import Segmenter
 
-PATIENT_IDS = ['LIDC-IDRI-0001', 'LIDC-IDRI-0003']
+# 4: too black
+# 7: merge with trachea
+PATIENT_IDS = [f'LIDC-IDRI-{i:04d}' for i in range(1, 10) if i not in [4, 7]]
 
 ROOT = Path(__file__).parent.parent
 
