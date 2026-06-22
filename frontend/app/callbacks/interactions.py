@@ -34,6 +34,68 @@ def _parse_anomalies(anomalies: list) -> list:
     return annotations
 
 
+def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
+    import dash_vtk
+    import math
+    reps = []
+    spacing = model_data.get("spacing", [1, 1, 1]) if model_data else [1, 1, 1]
+    
+    for ann in (store_data or []):
+        color = ([1, 1, 0] if selected_anomaly == ann.get('id')
+                 else ([1, 0, 0] if ann.get('prediction') == 1 else [0, 1, 0])
+        if 'prediction' in ann
+        else ([1, 1, 0] if selected_anomaly == ann.get('id') else [0, 0, 1]))
+
+        if ann.get('loc') == 'Backend' and 'z_range' in ann:
+            z1, z2 = ann['z_range']
+            cx = (ann['x0'] + ann['x1']) / 2 * spacing[0]
+            cy = (ann['y0'] + ann['y1']) / 2 * spacing[1]
+            cz = (z1 + z2) / 2 * spacing[2]
+            r = max(
+                abs(ann['x1'] - ann['x0']) / 2 * spacing[0],
+                abs(ann['y1'] - ann['y0']) / 2 * spacing[1],
+                abs(z2 - z1) / 2 * spacing[2],
+            )
+            reps.append(
+                dash_vtk.GeometryRepresentation(
+                    property={"color": color, "opacity": 0.35},
+                    children=[dash_vtk.Algorithm(
+                        vtkClass="vtkSphereSource",
+                        state={"center": [cx, cy, cz], "radius": r,
+                               "thetaResolution": 16, "phiResolution": 16}
+                    )]
+                )
+            )
+        else:
+            path_str = None
+            if ann.get('type') in ['path', 'line'] or 'path' in ann:
+                path_str = ann.get('path')
+            elif ann.get('type') == 'rect':
+                x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
+                x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
+                path_str = f"M {x0},{y0} L {x1},{y0} L {x1},{y1} L {x0},{y1} Z"
+            elif ann.get('type') == 'circle':
+                x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
+                x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
+                cx_2d, cy_2d = (x0+x1)/2, (y0+y1)/2
+                rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
+                pts = []
+                for i in range(16):
+                    ang = i * math.pi / 8
+                    pts.append(f"{cx_2d + rx*math.cos(ang)},{cy_2d + ry*math.sin(ang)}")
+                path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
+
+            if path_str:
+                pts, polys = svg_path_to_vtk_polydata(path_str, ann.get('slice', 1) - 1, spacing)
+                reps.append(
+                    dash_vtk.GeometryRepresentation(
+                        property={"color": color, "lineSegment": True, "lineWidth": 3},
+                        children=[dash_vtk.PolyData(points=pts, polys=polys)]
+                    )
+                )
+    return reps
+
+
 def _apply_resp_data(resp_data: dict) -> list:
     """
     Side-effect: update segmenter.lung from the volume in resp_data.
@@ -177,9 +239,11 @@ def register_callbacks():
         Output('ann-count-store', 'data', allow_duplicate=True),
         Input('current-3d-model', 'data'),
         State('slice-slider', 'value'),
+        State('annotations-store', 'data'),
+        State('selected-anomaly-store', 'data'),
         prevent_initial_call=True
     )
-    def update_vtk_volume(model_data, slice_z):
+    def update_vtk_volume(model_data, slice_z, annotations, selected_anomaly):
         """
         Rebuild the 3D VTK view ONLY when the underlying 3D model changes.
         """
@@ -234,6 +298,10 @@ def register_callbacks():
                 )
                 
             triggerRender = 0
+            
+            ann_reps = _build_vtk_annotations_list(annotations, selected_anomaly, model_data)
+            vtk_children.extend(ann_reps)
+            ann_count = len(ann_reps)
         else:
             vtk_children = [
                 dash_vtk.GeometryRepresentation(
@@ -244,6 +312,7 @@ def register_callbacks():
                 dash_vtk.GeometryRepresentation(id="slice-plane-repr")
             ]
             triggerRender = 1
+            ann_count = 0
 
         view_component = dash_vtk.View(
             id="vtk-view",
@@ -253,14 +322,14 @@ def register_callbacks():
             children=vtk_children
         )
                 
-        return [view_component], 0
+        return [view_component], ann_count
 
     @app.callback(
         Output('vtk-view', 'children'),
         Output('ann-count-store', 'data'),
         Input('annotations-store', 'data'),
         Input('selected-anomaly-store', 'data'),
-        State('current-3d-model', 'data'),
+        Input('current-3d-model', 'data'),
         State('ann-count-store', 'data'),
         prevent_initial_call=True
     )
@@ -269,8 +338,13 @@ def register_callbacks():
         Dynamically append/remove annotations using Patch(), leaving the VolumeRepresentation untouched.
         This prevents resetting user settings ('Use shadow', 'Rainbow').
         """
+        import dash
         import dash_vtk
         import math
+        
+        triggered_ids = [t['prop_id'].split('.')[0] for t in dash.callback_context.triggered]
+        if 'current-3d-model' in triggered_ids:
+            return dash.no_update, dash.no_update
         
         patch = Patch()
         ann_count = ann_count or 0
@@ -279,66 +353,11 @@ def register_callbacks():
         for _ in range(ann_count):
             del patch[-1]
             
-        new_count = 0
-        spacing = model_data.get("spacing", [1, 1, 1]) if model_data else [1, 1, 1]
-        
-        for ann in store_data:
-            color = ([1, 1, 0] if selected_anomaly == ann['id']
-                     else ([1, 0, 0] if ann.get('prediction') == 1 else [0, 1, 0])
-            if 'prediction' in ann
-            else ([1, 1, 0] if selected_anomaly == ann['id'] else [0, 0, 1]))
-
-            if ann.get('loc') == 'Backend' and 'z_range' in ann:
-                z1, z2 = ann['z_range']
-                cx = (ann['x0'] + ann['x1']) / 2 * spacing[0]
-                cy = (ann['y0'] + ann['y1']) / 2 * spacing[1]
-                cz = (z1 + z2) / 2 * spacing[2]
-                r = max(
-                    abs(ann['x1'] - ann['x0']) / 2 * spacing[0],
-                    abs(ann['y1'] - ann['y0']) / 2 * spacing[1],
-                    abs(z2 - z1) / 2 * spacing[2],
-                )
-                patch.append(
-                    dash_vtk.GeometryRepresentation(
-                        property={"color": color, "opacity": 0.35},
-                        children=[dash_vtk.Algorithm(
-                            vtkClass="vtkSphereSource",
-                            state={"center": [cx, cy, cz], "radius": r,
-                                   "thetaResolution": 16, "phiResolution": 16}
-                        )]
-                    )
-                )
-                new_count += 1
-            else:
-                path_str = None
-                if ann.get('type') in ['path', 'line'] or 'path' in ann:
-                    path_str = ann.get('path')
-                elif ann.get('type') == 'rect':
-                    x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
-                    x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                    path_str = f"M {x0},{y0} L {x1},{y0} L {x1},{y1} L {x0},{y1} Z"
-                elif ann.get('type') == 'circle':
-                    x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
-                    x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                    cx_2d, cy_2d = (x0+x1)/2, (y0+y1)/2
-                    rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
-                    pts = []
-                    for i in range(16):
-                        ang = i * math.pi / 8
-                        pts.append(f"{cx_2d + rx*math.cos(ang)},{cy_2d + ry*math.sin(ang)}")
-                    path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
-
-                if path_str:
-                    pts, polys = svg_path_to_vtk_polydata(path_str, ann['slice'] - 1, spacing)
-                    patch.append(
-                        dash_vtk.GeometryRepresentation(
-                            property={"color": color, "lineSegment": True, "lineWidth": 3},
-                            children=[dash_vtk.PolyData(points=pts, polys=polys)]
-                        )
-                    )
-                    new_count += 1
+        ann_reps = _build_vtk_annotations_list(store_data, selected_anomaly, model_data)
+        for rep in ann_reps:
+            patch.append(rep)
                     
-        return patch, new_count
+        return patch, len(ann_reps)
 
     @app.callback(
         Output('slice-plane-poly', 'points'),
