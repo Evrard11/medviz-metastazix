@@ -103,11 +103,12 @@ center_column = dmc.Stack(
     p="md",
     gap="md",
     children=[
-        dcc.Store(id='patients-store', storage_type="session", data=[]),
-        dcc.Store(id='current-3d-model', data=None),
+        dcc.Store(id='patients-store', data=[]),
         dcc.Store(id='annotations-store', data=[]),
         dcc.Store(id='selected-anomaly-store', data=None),
+        dcc.Store(id='current-3d-model', data=None),
         dcc.Store(id='upload-content-store', data=None),
+        dcc.Store(id='ann-count-store', data=0),
         dcc.Loading(
             id="loading-3d",
             type="circle",

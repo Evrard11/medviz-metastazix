@@ -13,7 +13,6 @@ from utils.parsing_utils import svg_path_to_vtk_polydata
 import uuid as _uuid
 import numpy as np
 
-
 def _parse_anomalies(anomalies: list) -> list:
     """Convert backend anomaly dicts into annotation store entries (1 per nodule)."""
     annotations = []
@@ -157,9 +156,9 @@ def register_callbacks():
                 shapes.append(shape_dict)
 
         # Check what triggered the callback
-        triggered_id = getattr(ctx, 'triggered_id', None)
+        triggered_ids = [t['prop_id'].split('.')[0] for t in ctx.triggered]
         
-        if triggered_id in ['annotations-store', 'selected-anomaly-store']:
+        if 'slice-slider' not in triggered_ids and ('annotations-store' in triggered_ids or 'selected-anomaly-store' in triggered_ids):
             # Partial update to avoid sending image data over network
             patched_fig = Patch()
             patched_fig['layout']['shapes'] = shapes
@@ -175,32 +174,32 @@ def register_callbacks():
 
     @app.callback(
         Output('vtk-container', 'children'),
-        Input('annotations-store', 'data'),
-        Input('selected-anomaly-store', 'data'),
+        Output('ann-count-store', 'data', allow_duplicate=True),
         Input('current-3d-model', 'data'),
-        State('slice-slider', 'value')
+        State('slice-slider', 'value'),
+        prevent_initial_call=True
     )
-    def update_vtk_only(store_data, selected_anomaly, model_data, slice_z):
+    def update_vtk_volume(model_data, slice_z):
         """
-        Update the 3D VTK view based on annotations and 3D model.
+        Rebuild the 3D VTK view ONLY when the underlying 3D model changes.
         """
         import dash_vtk
-        import uuid
         
         if model_data and "volume" in model_data:
             volume_data = model_data["volume"]
             dims = model_data["dimensions"]
             spacing = model_data["spacing"]
             
-            # Volume rendering
             vtk_children = [
                 dash_vtk.VolumeRepresentation(
+                    id="main-volume-repr",
                     mapper={"colorBlendMode": 0},
                     colorMapPreset="Grayscale",
                     colorDataRange=[0, 255],
                     children=[
-                        dash_vtk.VolumeController(),
+                        dash_vtk.VolumeController(id="main-volume-ctrl"),
                         dash_vtk.ImageData(
+                            id="main-volume-img",
                             dimensions=dims,
                             origin=[0, 0, 0],
                             spacing=spacing,
@@ -218,43 +217,71 @@ def register_callbacks():
                 )
             ]
             
-            # Draw a 3D bounding box / plane wireframe to represent the current slice
             if slice_z:
                 z_idx = slice_z - 1
                 z_pos = z_idx * spacing[2]
                 X = dims[0] * spacing[0]
                 Y = dims[1] * spacing[1]
-                
-                slice_pts = [
-                    0, 0, z_pos,
-                    X, 0, z_pos,
-                    X, Y, z_pos,
-                    0, Y, z_pos
-                ]
-                slice_polys = [4, 0, 1, 2, 3] # A single quad showing the bounds of the slice
+                slice_pts = [0, 0, z_pos, X, 0, z_pos, X, Y, z_pos, 0, Y, z_pos]
+                slice_polys = [4, 0, 1, 2, 3]
                 
                 vtk_children.append(
                     dash_vtk.GeometryRepresentation(
+                        id="slice-plane-repr",
                         property={"color": [0, 1, 1], "lineSegment": True, "lineWidth": 2, "opacity": 0.8},
-                        children=[
-                            dash_vtk.PolyData(id="slice-plane-poly", points=slice_pts, polys=slice_polys)
-                        ]
+                        children=[dash_vtk.PolyData(id="slice-plane-poly", points=slice_pts, polys=slice_polys)]
                     )
                 )
                 
-            view_id = f"vtk-view-{dims[0]}-{dims[1]}-{dims[2]}" # Stable ID prevents camera reset
+            triggerRender = 0
         else:
-            # Lung mesh (Fallback or startup)
             vtk_children = [
                 dash_vtk.GeometryRepresentation(
+                    id="lung-mesh-repr",
                     property={"color": [1, 1, 1], "opacity": 0.15, "edgeVisibility": False},
-                    children=[
-                        dash_vtk.PolyData(points=lung_points, polys=lung_polys)
-                    ]
-                )
+                    children=[dash_vtk.PolyData(points=lung_points, polys=lung_polys)]
+                ),
+                dash_vtk.GeometryRepresentation(id="slice-plane-repr")
             ]
+            triggerRender = 1
+
+        view_component = dash_vtk.View(
+            id="vtk-view",
+            background=[0, 0, 0],
+            style={"width": "100%", "height": "100%", "flex": 1},
+            triggerRender=triggerRender,
+            children=vtk_children
+        )
+                
+        return [view_component], 0
+
+    @app.callback(
+        Output('vtk-view', 'children'),
+        Output('ann-count-store', 'data'),
+        Input('annotations-store', 'data'),
+        Input('selected-anomaly-store', 'data'),
+        State('current-3d-model', 'data'),
+        State('ann-count-store', 'data'),
+        prevent_initial_call=True
+    )
+    def update_vtk_annotations(store_data, selected_anomaly, model_data, ann_count):
+        """
+        Dynamically append/remove annotations using Patch(), leaving the VolumeRepresentation untouched.
+        This prevents resetting user settings ('Use shadow', 'Rainbow').
+        """
+        import dash_vtk
+        import math
         
-        # Drawn polygons
+        patch = Patch()
+        ann_count = ann_count or 0
+        
+        # Remove previous annotations from the Patch array
+        for _ in range(ann_count):
+            del patch[-1]
+            
+        new_count = 0
+        spacing = model_data.get("spacing", [1, 1, 1]) if model_data else [1, 1, 1]
+        
         for ann in store_data:
             color = ([1, 1, 0] if selected_anomaly == ann['id']
                      else ([1, 0, 0] if ann.get('prediction') == 1 else [0, 1, 0])
@@ -271,7 +298,7 @@ def register_callbacks():
                     abs(ann['y1'] - ann['y0']) / 2 * spacing[1],
                     abs(z2 - z1) / 2 * spacing[2],
                 )
-                vtk_children.append(
+                patch.append(
                     dash_vtk.GeometryRepresentation(
                         property={"color": color, "opacity": 0.35},
                         children=[dash_vtk.Algorithm(
@@ -281,6 +308,7 @@ def register_callbacks():
                         )]
                     )
                 )
+                new_count += 1
             else:
                 path_str = None
                 if ann.get('type') in ['path', 'line'] or 'path' in ann:
@@ -292,39 +320,25 @@ def register_callbacks():
                 elif ann.get('type') == 'circle':
                     x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
                     x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                    cx, cy = (x0+x1)/2, (y0+y1)/2
+                    cx_2d, cy_2d = (x0+x1)/2, (y0+y1)/2
                     rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
                     pts = []
                     for i in range(16):
                         ang = i * math.pi / 8
-                        pts.append(f"{cx + rx*math.cos(ang)},{cy + ry*math.sin(ang)}")
+                        pts.append(f"{cx_2d + rx*math.cos(ang)},{cy_2d + ry*math.sin(ang)}")
                     path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
 
                 if path_str:
                     pts, polys = svg_path_to_vtk_polydata(path_str, ann['slice'] - 1)
-                    vtk_children.append(
+                    patch.append(
                         dash_vtk.GeometryRepresentation(
                             property={"color": color, "lineSegment": True, "lineWidth": 3},
                             children=[dash_vtk.PolyData(points=pts, polys=polys)]
                         )
                     )
-                
-        if 'view_id' not in locals():
-            view_id = {"type": "vtk-view-dynamic", "index": "default-view"}
-            triggerRender = 1
-        else:
-            triggerRender = 0
-
-        # Create View with stable ID to prevent camera reset during slider drag
-        view_component = dash_vtk.View(
-            id=view_id,
-            background=[0, 0, 0],
-            style={"width": "100%", "height": "100%", "flex": 1},
-            triggerRender=triggerRender,
-            children=vtk_children
-        )
-                
-        return [view_component]
+                    new_count += 1
+                    
+        return patch, new_count
 
     @app.callback(
         Output('slice-plane-poly', 'points'),
