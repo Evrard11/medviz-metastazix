@@ -237,7 +237,7 @@ def register_callbacks():
                     dash_vtk.GeometryRepresentation(
                         property={"color": [0, 1, 1], "lineSegment": True, "lineWidth": 2, "opacity": 0.8},
                         children=[
-                            dash_vtk.PolyData(points=slice_pts, polys=slice_polys)
+                            dash_vtk.PolyData(id="slice-plane-poly", points=slice_pts, polys=slice_polys)
                         ]
                     )
                 )
@@ -327,7 +327,7 @@ def register_callbacks():
         return [view_component]
 
     @app.callback(
-        Output('vtk-container', 'children', allow_duplicate=True),
+        Output('slice-plane-poly', 'points'),
         Input('slice-slider', 'value'),
         State('current-3d-model', 'data'),
         prevent_initial_call=True
@@ -352,15 +352,7 @@ def register_callbacks():
             0, Y, z_pos
         ]
         
-        # Fast patch without redrawing the 3MB volume
-        patched_list = Patch()
-        try:
-            # We know the slice outline is always appended as the second child (index 1) 
-            # after the VolumeRepresentation in update_vtk_only
-            patched_list[0]['props']['children'][1]['props']['children'][0]['props']['points'] = slice_pts
-            return patched_list
-        except Exception:
-            return no_update
+        return slice_pts
 
     @app.callback(
         Output('anomalies-list', 'children'),

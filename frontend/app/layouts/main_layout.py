@@ -124,12 +124,12 @@ center_column = dmc.Stack(
                 #3D VTK Card
                 dmc.Card(
                     withBorder=True, radius="lg", flex=1,
-                    style={"backgroundColor": "#000", "position": "relative", "display": "flex", "alignItems": "stretch", "justifyContent": "stretch", "padding": 0},
+                    style={"backgroundColor": "#000", "position": "relative", "display": "flex", "flexDirection": "column", "padding": 0},
                     children=[
-                        # 3D Interactive Badge
+                        # 3D Interactive Badge (now a header)
                         dmc.Stack(
                             gap=2,
-                            style={"position": "absolute", "bottom": 15, "left": 15, "backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 12px", "borderRadius": "8px", "backdropFilter": "blur(4px)", "border": "1px solid var(--mantine-color-default-border)", "zIndex": 10, "pointerEvents": "none"},
+                            style={"backgroundColor": "rgba(20,20,20,0.8)", "padding": "8px 15px", "borderBottom": "1px solid var(--mantine-color-default-border)", "zIndex": 10},
                             children=[
                                 dmc.Text("Modèle 3D interactif", fw=700, c="cyan", size="sm"),
                                 dmc.Text("Tourner le modèle avec la souris", c="dimmed", size="xs")
@@ -137,7 +137,7 @@ center_column = dmc.Stack(
                         ),
                         html.Div(
                             id="vtk-container",
-                            style={"width": "100%", "height": "100%", "flex": 1, "display": "flex"},
+                            style={"width": "100%", "height": "100%", "flex": 1, "display": "flex", "position": "relative"},
                             children=[
                                 dash_vtk.View(
                                     id="vtk-view",
