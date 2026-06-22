@@ -1,5 +1,5 @@
 import numpy as np
-from .features import extract_features
+from features import extract_features
 
 def predict_candidates(candidates, model):
     results = []
