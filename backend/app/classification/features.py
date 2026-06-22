@@ -1,6 +1,8 @@
 import numpy as np
 import SimpleITK as sitk
 from radiomics import featureextractor
+from .masking import create_mask
+
 
 def cube_to_sitk(cube: np.ndarray, spacing: tuple) -> sitk.Image:
     image = sitk.GetImageFromArray(cube.astype(np.float32))
@@ -8,7 +10,6 @@ def cube_to_sitk(cube: np.ndarray, spacing: tuple) -> sitk.Image:
     return image
 
 def extract_features(cube: np.ndarray, spacing: tuple) -> dict:
-    from masking import create_mask
     mask = create_mask(cube)
 
     if mask.sum() == 0:
