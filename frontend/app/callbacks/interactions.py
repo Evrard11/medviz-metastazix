@@ -384,9 +384,6 @@ def register_callbacks():
         search_text = (search_text or "").lower()
         
         for ann in store_data:
-            if ann.get('loc') == 'Dessin manuel':
-                continue
-                
             ann_name = ann.get('id', '').lower()
             ann_slice = str(ann.get('slice', ''))
             
@@ -468,7 +465,7 @@ def register_callbacks():
         
         max_slice = model_data.get("dimensions", [0, 0, 1])[2]
         mid_slice = max(1, max_slice // 2)
-        return {"display": "none"}, {"width": "100%", "height": "100%", "display": "flex", "flex": 1, "flexDirection": "column"}, max_slice, mid_slice
+        return {"display": "none"}, {"width": "100%", "height": "100%", "display": "flex", "flex": 1}, max_slice, mid_slice
 
     @app.callback(
         Output('upload-content-store', 'data'),
@@ -568,29 +565,21 @@ def register_callbacks():
 
     @app.callback(
         Output('traces-container', 'children'),
-        Input('annotations-store', 'data'),
-        Input('anomaly-search-input', 'value')
+        Input('annotations-store', 'data')
     )
-    def update_traces_info(annotations, search_text):
+    def update_traces_info(annotations):
         import dash_mantine_components as dmc
-        from components.cards import anomaly_card
-        
         manual_traces = [a for a in annotations if a.get('loc') == 'Dessin manuel']
         if not manual_traces:
-            return dmc.Text("Aucun tracé manuel en cours", c="dimmed", size="sm", mt="sm")
-            
-        cards = []
-        search_text = (search_text or "").lower()
-        for ann in manual_traces:
-            ann_name = ann.get('id', '').lower()
-            ann_slice = str(ann.get('slice', ''))
-            if search_text in ann_name or search_text in ann_slice or search_text == "":
-                cards.append(anomaly_card(ann))
-                
-        if not cards:
-            return dmc.Text("Aucun tracé manuel trouvé", c="dimmed", size="sm", mt="sm")
-            
-        return dmc.Stack(gap="xs", style={"textAlign": "left"}, children=cards)
+            return dmc.Text("Aucun tracé manuel en cours", c="dimmed", size="sm")
+        
+        return dmc.Stack(
+            gap="xs",
+            children=[
+                dmc.Text(f"{len(manual_traces)} tracés manuels", fw=500, size="sm"),
+                dmc.Text("Volume total estimé : Non calculé", size="xs", c="dimmed")
+            ]
+        )
 
     @app.callback(
         Output('report-modal', 'opened'),
