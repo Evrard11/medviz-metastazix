@@ -440,12 +440,18 @@ def register_callbacks():
     @app.callback(
         Output('2d-empty-state', 'style'),
         Output('2d-viewer-container', 'style'),
-        Input('current-3d-model', 'data')
+        Output('slice-slider', 'max'),
+        Output('slice-slider', 'value', allow_duplicate=True),
+        Input('current-3d-model', 'data'),
+        prevent_initial_call=True
     )
     def toggle_2d_viewer(model_data):
         if not model_data:
-            return {"width": "100%", "height": "100%", "display": "flex", "padding": "20px", "flex": 1}, {"display": "none"}
-        return {"display": "none"}, {"width": "100%", "height": "100%", "display": "flex", "flex": 1}
+            return {"width": "100%", "height": "100%", "display": "flex", "padding": "20px", "flex": 1}, {"display": "none"}, no_update, no_update
+        
+        max_slice = model_data.get("dimensions", [0, 0, 1])[2]
+        mid_slice = max(1, max_slice // 2)
+        return {"display": "none"}, {"width": "100%", "height": "100%", "display": "flex", "flex": 1}, max_slice, mid_slice
 
     @app.callback(
         Output('upload-content-store', 'data'),
