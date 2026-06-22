@@ -8,6 +8,59 @@ from data.backend_integration import segmenter, lung_points, lung_polys
 from components.cards import anomaly_card
 from utils.parsing_utils import svg_path_to_vtk_polydata
 
+# region HELPERS
+
+import uuid as _uuid
+import numpy as np
+
+
+def _parse_anomalies(anomalies: list) -> list:
+    """Convert backend anomaly dicts into annotation store entries (1 per nodule)."""
+    annotations = []
+    for res in anomalies:
+        z1, y1, x1, z2, y2, x2 = res["bbox"]
+        score = res.get("score", 0)
+        pred = "Malignant" if score > 0.5 else "Benign"
+        annotations.append({
+            "id":         f"AUTO-{_uuid.uuid4().hex[:8].upper()}",
+            "slice":      int((z1 + z2) / 2) + 1,   # central slice, 1-indexed
+            "z_range":    [int(z1), int(z2)],         # full extent for 2-D filtering
+            "type":       "circle",
+            "x0": x1, "y0": y1, "x1": x2, "y1": y2,
+            "loc":        "Backend",
+            "size":       f"{abs((x2-x1)*(y2-y1)*(z2-z1))} vox",
+            "note":       f"Score: {score:.2f} ({pred})",
+            "prediction": 1 if score > 0.5 else 0,
+        })
+    return annotations
+
+
+def _apply_resp_data(resp_data: dict) -> list:
+    """
+    Side-effect: update segmenter.lung from the volume in resp_data.
+    Returns the annotation list.
+    """
+    if "volume" in resp_data:
+        dims = resp_data["dimensions"]
+        vol_array = np.array(resp_data["volume"], dtype=np.uint8).reshape(
+            (dims[2], dims[1], dims[0])
+        )
+        segmenter.lung = vol_array
+
+    return _parse_anomalies(resp_data.get("anomalies", []))
+
+def _call_backend(patient_id: str) -> dict | None:
+    import os, requests
+    BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+    try:
+        resp = requests.post(f"{BACKEND_URL}/process_dicom", json={"patient_id": patient_id})
+        return resp.json()
+    except Exception as e:
+        print(f"Backend error: {e}")
+        return None
+
+# endregion HELPERS
+
 def register_callbacks():
     """
     Register all Dash callbacks for interactivity, linking the UI components 
@@ -76,6 +129,15 @@ def register_callbacks():
         # Add shapes for current slice
         shapes = []
         for ann in store_data:
+            z_range = ann.get('z_range')
+            if z_range:
+                visible = z_range[0] + 1 <= slice_idx <= z_range[1] + 1
+            else:
+                visible = ann.get('slice') == slice_idx
+
+            if not visible:
+                continue
+
             if ann.get('slice') == slice_idx:
                 color = "yellow" if selected_anomaly == ann['id'] else "cyan"
                 
@@ -194,43 +256,58 @@ def register_callbacks():
         
         # Drawn polygons
         for ann in store_data:
-            path_str = None
-            if ann.get('type') in ['path', 'line'] or 'path' in ann:
-                path_str = ann.get('path')
-            elif ann.get('type') == 'rect':
-                x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
-                x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                path_str = f"M {x0},{y0} L {x1},{y0} L {x1},{y1} L {x0},{y1} Z"
-            elif ann.get('type') == 'circle':
-                x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
-                x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                cx, cy = (x0+x1)/2, (y0+y1)/2
-                rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
-                pts = []
-                for i in range(16):
-                    ang = i * math.pi / 8
-                    pts.append(f"{cx + rx*math.cos(ang)},{cy + ry*math.sin(ang)}")
-                path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
-                
-            if path_str:
-                pts, polys = svg_path_to_vtk_polydata(path_str, ann['slice'] - 1)
-                
-                if 'prediction' in ann:
-                    # Backend anomaly
-                    base_color = [1, 0, 0] if ann['prediction'] == 1 else [0, 1, 0]
-                    color = [1, 1, 0] if selected_anomaly == ann['id'] else base_color
-                else:
-                    # Manual annotation
-                    color = [1, 1, 0] if selected_anomaly == ann['id'] else [0, 0, 1]
-                    
+            color = ([1, 1, 0] if selected_anomaly == ann['id']
+                     else ([1, 0, 0] if ann.get('prediction') == 1 else [0, 1, 0])
+            if 'prediction' in ann
+            else ([1, 1, 0] if selected_anomaly == ann['id'] else [0, 0, 1]))
+
+            if ann.get('loc') == 'Backend' and 'z_range' in ann:
+                z1, z2 = ann['z_range']
+                cx = (ann['x0'] + ann['x1']) / 2 * spacing[0]
+                cy = (ann['y0'] + ann['y1']) / 2 * spacing[1]
+                cz = (z1 + z2) / 2 * spacing[2]
+                r = max(
+                    abs(ann['x1'] - ann['x0']) / 2 * spacing[0],
+                    abs(ann['y1'] - ann['y0']) / 2 * spacing[1],
+                    abs(z2 - z1) / 2 * spacing[2],
+                )
                 vtk_children.append(
                     dash_vtk.GeometryRepresentation(
-                        property={"color": color, "lineSegment": True, "lineWidth": 3},
-                        children=[
-                            dash_vtk.PolyData(points=pts, polys=polys)
-                        ]
+                        property={"color": color, "opacity": 0.35},
+                        children=[dash_vtk.Algorithm(
+                            vtkClass="vtkSphereSource",
+                            state={"center": [cx, cy, cz], "radius": r,
+                                   "thetaResolution": 16, "phiResolution": 16}
+                        )]
                     )
                 )
+            else:
+                path_str = None
+                if ann.get('type') in ['path', 'line'] or 'path' in ann:
+                    path_str = ann.get('path')
+                elif ann.get('type') == 'rect':
+                    x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
+                    x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
+                    path_str = f"M {x0},{y0} L {x1},{y0} L {x1},{y1} L {x0},{y1} Z"
+                elif ann.get('type') == 'circle':
+                    x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
+                    x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
+                    cx, cy = (x0+x1)/2, (y0+y1)/2
+                    rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
+                    pts = []
+                    for i in range(16):
+                        ang = i * math.pi / 8
+                        pts.append(f"{cx + rx*math.cos(ang)},{cy + ry*math.sin(ang)}")
+                    path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
+
+                if path_str:
+                    pts, polys = svg_path_to_vtk_polydata(path_str, ann['slice'] - 1)
+                    vtk_children.append(
+                        dash_vtk.GeometryRepresentation(
+                            property={"color": color, "lineSegment": True, "lineWidth": 3},
+                            children=[dash_vtk.PolyData(points=pts, polys=polys)]
+                        )
+                    )
                 
         if 'view_id' not in locals():
             view_id = {"type": "vtk-view-dynamic", "index": "default-view"}
@@ -447,26 +524,8 @@ def register_callbacks():
             zip_ref.extractall(patient_dir)
             
         # Call Backend
-        BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
-        resp_data = None
-        
-        try:
-            resp = requests.post(f"{BACKEND_URL}/process_dicom", json={"patient_id": patient_id})
-            resp_data = resp.json()
-            
-            if "volume" in resp_data:
-                # Update global 2D view data
-                import numpy as np
-                from data.backend_integration import segmenter
-                dims = resp_data["dimensions"]
-                vol_flat = resp_data["volume"]
-                # reshape back to (Z, Y, X)
-                vol_array = np.array(vol_flat, dtype=np.uint8).reshape((dims[2], dims[1], dims[0]))
-                segmenter.lung = vol_array
-                
-        except Exception as e:
-            print(f"Error calling backend: {e}")
-            resp_data = {"error": str(e)}
+        resp_data = _call_backend(patient_id) or {"error": "backend unreachable"}
+        new_annotations = _apply_resp_data(resp_data)
             
         # Add patient to store
         new_patient = {
@@ -477,29 +536,9 @@ def register_callbacks():
             "date": "Aujourd'hui"
         }
         patients_data.append(new_patient)
-        
-        # Add anomalies to annotations_data
-        if resp_data and "anomalies" in resp_data:
-            # spacing = resp_data.get("spacing", [1,1,1])
-            # For simplicity, if spacing is not available we assume 1.
-            for res in resp_data["anomalies"]:
-                z1, y1, x1, z2, y2, x2 = res["bbox"]
-                score = res.get("score", 0)
-                pred = "Malignant" if score > 0.5 else "Benign"
-                ann = {
-                    'id': f"AUTO-{uuid.uuid4().hex[:8].upper()}",
-                    'slice': int((z1+z2)/2) + 1,  # 1-indexed
-                    'type': 'rect',
-                    'x0': x1, 'y0': y1, 'x1': x2, 'y1': y2,
-                    'loc': 'Backend',
-                    'size': f"{abs((x2-x1)*(y2-y1)*(z2-z1))} vox",
-                    'note': f"Score: {score:.2f} ({pred})",
-                    'prediction': 1 if score > 0.5 else 0
-                }
-                annotations_data.append(ann)
-        
+
         # Return patients, the 3d model data, annotations and close modal
-        return patients_data, resp_data, annotations_data, False
+        return patients_data, resp_data, annotations_data + new_annotations, False
 
     @app.callback(
         Output('patients-list', 'children'),
@@ -604,58 +643,15 @@ def register_callbacks():
         prevent_initial_call=True
     )
     def switch_patient(n_clicks_list):
-        import dash
-        ctx = dash.callback_context
-        if not ctx.triggered:
-            return dash.no_update, dash.no_update
-        
-        trigger_id_str = ctx.triggered[0]['prop_id'].split('.')[0]
-        if 'index' not in trigger_id_str:
-            return dash.no_update, dash.no_update
-            
+        if not ctx.triggered or ctx.triggered[0]['value'] in (None, 0):
+            return no_update, no_update
+
         import json
-        trigger_id_dict = json.loads(trigger_id_str)
-        patient_id = trigger_id_dict['index']
-        
-        if ctx.triggered[0]['value'] is None or ctx.triggered[0]['value'] == 0:
-             return dash.no_update, dash.no_update
-        
-        import requests
-        import os
-        BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
-        
-        try:
-            resp = requests.post(f"{BACKEND_URL}/process_dicom", json={"patient_id": patient_id})
-            resp_data = resp.json()
-            
-            if "volume" in resp_data:
-                import numpy as np
-                from data.backend_integration import segmenter
-                dims = resp_data["dimensions"]
-                vol_flat = resp_data["volume"]
-                vol_array = np.array(vol_flat, dtype=np.uint8).reshape((dims[2], dims[1], dims[0]))
-                segmenter.lung = vol_array
-                
-            annotations_data = []
-            if "anomalies" in resp_data:
-                import uuid
-                for res in resp_data["anomalies"]:
-                    z1, y1, x1, z2, y2, x2 = res["bbox"]
-                    score = res.get("score", 0)
-                    pred = "Malignant" if score > 0.5 else "Benign"
-                    ann = {
-                        'id': f"AUTO-{uuid.uuid4().hex[:8].upper()}",
-                        'slice': int((z1+z2)/2) + 1,
-                        'type': 'rect',
-                        'x0': x1, 'y0': y1, 'x1': x2, 'y1': y2,
-                        'loc': 'Backend',
-                        'size': f"{abs((x2-x1)*(y2-y1)*(z2-z1))} vox",
-                        'note': f"Score: {score:.2f} ({pred})",
-                        'prediction': 1 if score > 0.5 else 0
-                    }
-                    annotations_data.append(ann)
-                    
-            return resp_data, annotations_data
-        except Exception as e:
-            print(f"Error switching patient: {e}")
-            return dash.no_update, dash.no_update
+        triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
+        patient_id = triggered_id['index']
+
+        resp_data = _call_backend(patient_id)
+        if not resp_data:
+            return no_update, no_update
+
+        return resp_data, _apply_resp_data(resp_data)

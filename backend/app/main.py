@@ -64,6 +64,7 @@ class ProcessDicomRequest(BaseModel):
 
 @app.post("/process_dicom")
 def process_dicom(req: ProcessDicomRequest):
+    print("Processing dicom")
     import os
     STORAGE_DIR = os.environ.get("STORAGE_PATH", "/storage")
     if not os.path.exists(STORAGE_DIR):
@@ -71,10 +72,16 @@ def process_dicom(req: ProcessDicomRequest):
         STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "storage"))
     
     patient_path = os.path.join(STORAGE_DIR, "uploads", req.patient_id)
-    
+
+    if os.path.exists(patient_path):
+        print("Patient path exists")
+    else:
+        print("Patient path does not exist")
+        raise HTTPException(404, "Patient path does not exist")
+
     # 1. Initialize PatientManager
-    patient = PatientManager(patient_path=patient_path)
-    patient.init()
+    patient = PatientManager()
+    patient.init(patient_path)
     
     # 2. Segment
     seg = Segmenter(patient)
@@ -94,13 +101,13 @@ def process_dicom(req: ProcessDicomRequest):
     volume = patient.volume
     if volume is None:
         return {"error": "Volume not loaded"}
-    
+
     # Downsample the volume by 4x in each dimension for performance and payload size
     step_z, step_y, step_x = 2, 4, 4
     small_vol = volume[::step_z, ::step_y, ::step_x]
     
     # Normalize HU to 0-255 for better transport
-    small_vol = np.clip(small_vol, -1000, 400)
+    small_vol = np.clip(small_vol, -1000, 400).astype(np.float32)
     small_vol = ((small_vol + 1000) / 1400.0 * 255).astype(np.uint8)
     
     # Dimensions: X, Y, Z
@@ -116,10 +123,15 @@ def process_dicom(req: ProcessDicomRequest):
     response_candidates = []
     for res in classification_results:
         cz, cy, cx = res['centroid']
+        z1, y1, x1, z2, y2, x2 = res["bbox"]
+        print(res["bbox"])
         response_candidates.append({
             "centroid": [float(cx), float(cy), float(cz)],
             "score": float(res["malignancy_score"]),
-            "bbox": res["bbox"]
+            "bbox": [
+            z1 / step_z, y1 / step_y, x1 / step_x,
+            z2 / step_z, y2 / step_y, x2 / step_x,
+        ]
         })
 
     return {
