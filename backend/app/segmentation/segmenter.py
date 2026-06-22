@@ -200,16 +200,19 @@ class Segmenter:
         self.preprocess()
 
         print("Segmentation ...")
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             f_otsu = executor.submit(self.segment_otsu)
-            f_rg_solid = executor.submit(self.segment_region_growing, seed_lower=-700, lower=-700, upper=400)
+            f_rg_ggo = executor.submit(self.segment_region_growing, seed_lower=-400, lower=-600, upper=0)
+            f_rg_solid = executor.submit(self.segment_region_growing, seed_lower=-50, lower=-200, upper=400)
 
             nodules_segmented_otsu = f_otsu.result()
+            nodules_segmented_rg_ggo = f_rg_ggo.result()
             nodules_segmented_rg_solid = f_rg_solid.result()
 
         print("Merge nodules segmented ...")
         nodules_mask_roi = self.merge_nodules_segmented(
             nodules_segmented_otsu,
+            nodules_segmented_rg_ggo,
             nodules_segmented_rg_solid,
         )
 
@@ -304,12 +307,24 @@ class Segmenter:
     # endregion Display
 
     # region TestHelper
+    @staticmethod
+    def _bbox_intersection_volume(bbox_a: tuple, bbox_b: tuple) -> float:
+        """:return: volume of inter of bbox, 0 if no overlap"""
+        az1, ay1, ax1, az2, ay2, ax2 = bbox_a
+        bz1, by1, bx1, bz2, by2, bx2 = bbox_b
+
+        iz1, iy1, ix1 = max(az1, bz1), max(ay1, by1), max(ax1, bx1)
+        iz2, iy2, ix2 = min(az2, bz2), min(ay2, by2), min(ax2, bx2)
+
+        dz, dy, dx = iz2 - iz1, iy2 - iy1, ix2 - ix1
+        if dz <= 0 or dy <= 0 or dx <= 0:
+            return 0.0
+        return float(dz * dy * dx)
 
     @staticmethod
     def match_candidates(
             annotations: list[dict],
             candidates: list[dict],
-            max_dist: float = 15.0
     ) -> list[tuple[dict, dict]]:
         """
         1-to-1 matches btw annotation and segmentation within a max distance
@@ -321,19 +336,19 @@ class Segmenter:
 
         for ann in annotations:
             az, ay, ax = ann['centroid']
-            min_dist, min_idx = float('inf'), None
+            best_idx, min_dist = None, float('inf')
+
             for i, cand in enumerate(candidates):
                 if i in used:
                     continue
                 cz, cy, cx = cand['centroid']
-                # euclidian dist
                 dist = np.sqrt((az - cz) ** 2 + (ay - cy) ** 2 + (ax - cx) ** 2)
                 if dist < min_dist:
-                    min_dist, min_idx = dist, i
+                    min_dist, best_idx = dist, i
 
-            if min_idx is not None and min_dist <= max_dist:
-                pairs.append((ann, candidates[min_idx]))
-                used.add(min_idx)
+            if best_idx is not None:
+                pairs.append((ann, candidates[best_idx]))
+                used.add(best_idx)
 
         return pairs
 
