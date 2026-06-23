@@ -66,7 +66,7 @@ def process_dicom(req: ProcessDicomRequest):
     print(f"{len(candidates)} candidates found after segmentation")
     
     # 3. Classify
-    classification_results = predict_candidates(candidates, model)
+    classification_results = predict_candidates(candidates, model, seg.nodules_mask)
     print(f"{len(classification_results)} candidates found after classification")
     
     # 4. Generate 3D Volume for rendering

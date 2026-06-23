@@ -9,8 +9,16 @@ def cube_to_sitk(cube: np.ndarray, spacing: tuple) -> sitk.Image:
     image.SetSpacing(spacing)
     return image
 
-def extract_features(cube: np.ndarray, spacing: tuple) -> dict:
-    mask = create_mask(cube)
+def extract_features(cube: np.ndarray, spacing: tuple, seg_mask: np.ndarray = None) -> dict:
+    mask = create_mask(cube, seg_mask)
+
+    # force mask size same as cube
+    if mask.shape != cube.shape:
+        min_z = min(mask.shape[0], cube.shape[0])
+        min_y = min(mask.shape[1], cube.shape[1])
+        min_x = min(mask.shape[2], cube.shape[2])
+        mask = mask[:min_z, :min_y, :min_x]
+        cube = cube[:min_z, :min_y, :min_x]
 
     if mask.sum() == 0:
         return {}
