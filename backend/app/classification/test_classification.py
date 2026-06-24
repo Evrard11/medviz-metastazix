@@ -1,13 +1,15 @@
 import numpy as np
 import os
 import pathlib
-from masking import create_mask
-from features import extract_features
-from pipeline import predict_candidates
-from classifier import save_model, load_model
+from .masking import create_mask
+from .features import extract_features
+from .pipeline import predict_candidates
+from .classifier import save_model, load_model
 
-PKL_PATH = pathlib.Path(__file__).parent / "modele_xgb.pkl"
-REAL_MODEL = load_model(str(PKL_PATH)) if PKL_PATH.exists() else None
+PKL_PATH_CLF = pathlib.Path(__file__).parent / "model_classifier.pkl"
+PKL_PATH_FP = pathlib.Path(__file__).parent / "model_fp_reducer.pkl"
+REAL_MODEL = load_model(str(PKL_PATH_CLF)) if PKL_PATH_CLF.exists() else (None, None)
+REAL_FP_MODEL = load_model(str(PKL_PATH_FP)) if PKL_PATH_FP.exists() else (None, None)
 
 def make_fake_cube(nodule_value=50, background=-800, size=32):
     cube = np.full((size, size, size), background, dtype=np.int32)
@@ -29,6 +31,10 @@ class FakeModel:
     def predict_proba(self, X):
         return np.array([[0.3, 0.7]])
 
+class FakeFpReducer:
+    def predict_proba(self, X):
+        return np.array([[0.2, 0.8]])
+
 def test_masking():
     cube = make_fake_cube()
     mask = create_mask(cube)
@@ -48,7 +54,7 @@ def test_masking_valeurs_limites():
     cube = np.full((32, 32, 32), -800, dtype=np.int32)
     cube[0, 0, 0] = -100
     cube[0, 0, 1] = 400
-    cube[0, 0, 2] = -101
+    cube[0, 0, 2] = -701
     cube[0, 0, 3] = 401
     mask = create_mask(cube)
     assert mask[0, 0, 0] == 1, "-100 devrait être inclus"
@@ -83,7 +89,7 @@ def test_features_cubes_differents():
 
 def test_pipeline():
     candidates = [make_fake_candidate()]
-    results = predict_candidates(candidates, FakeModel())
+    results = predict_candidates(candidates, FakeFpReducer(), FakeModel())
     assert len(results) == 1, "mauvais nombre de résultats"
     assert "malignancy_score" in results[0], "clé malignancy_score manquante"
     assert "centroid" in results[0], "clé centroid manquante"
@@ -93,16 +99,16 @@ def test_pipeline():
 
 def test_pipeline_plusieurs_candidats():
     candidates = [make_fake_candidate() for _ in range(5)]
-    results = predict_candidates(candidates, FakeModel())
+    results = predict_candidates(candidates, FakeFpReducer(), FakeModel())
     assert len(results) == 5, f"attendu 5 résultats, obtenu {len(results)}"
     print(f"OK test_pipeline_plusieurs_candidats — {len(results)} résultats")
 
 def test_pipeline_cube_vide():
     candidate = make_fake_candidate()
     candidate["cube"] = np.full((32, 32, 32), -800, dtype=np.int32)
-    results = predict_candidates([candidate], FakeModel())
-    assert len(results) == 1, "devrait retourner un résultat même avec un cube vide"
-    print(f"OK test_pipeline_cube_vide — score : {results[0]['malignancy_score']}")
+    results = predict_candidates([candidate], FakeFpReducer(), FakeModel())
+    assert len(results) == 0, "devrait être skipped car cube vide"
+    print("OK test_pipeline_cube_vide")
 
 def test_classifier_save_load():
     model = FakeModel()
@@ -117,14 +123,14 @@ def test_classifier_save_load():
     print("OK test_classifier_save_load")
 
 def test_real_model():
-    if REAL_MODEL is None:
-        print("SKIP test_real_model — pas de modele_xgb.pkl")
+    if REAL_MODEL is None or REAL_FP_MODEL is None:
+        print("SKIP test_real_model — modèles manquants")
         return
     candidates = [make_fake_candidate(nodule_value=30), make_fake_candidate(nodule_value=200)]
-    results = predict_candidates(candidates, REAL_MODEL)
-    assert len(results) == 2
+    results = predict_candidates(candidates, REAL_FP_MODEL, REAL_MODEL)
+    assert len(results) <= 2
     assert all(0.0 <= r["malignancy_score"] <= 1.0 for r in results)
-    print(f"OK test_real_model — bénin: {results[0]['malignancy_score']:.3f} | malin: {results[1]['malignancy_score']:.3f}")
+    print(f"OK test_real_model — {len(results)} résultats")
 
 if __name__ == "__main__":
     tests = [
