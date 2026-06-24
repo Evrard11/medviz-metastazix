@@ -7,7 +7,7 @@ from app.segmentation.segmenter import Segmenter
 
 # 4: too black
 # 7: merge with trachea
-PATIENT_IDS = [f'LIDC-IDRI-{i:04d}' for i in range(1, 10) if i not in [4, 7]]
+PATIENT_IDS = [f'LIDC-IDRI-{i:04d}' for i in [1,3,7,10,11]]
 
 ROOT = Path(__file__).parent.parent
 

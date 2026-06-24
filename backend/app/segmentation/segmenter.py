@@ -110,7 +110,8 @@ class Segmenter:
 
         nodule_mask = np.zeros_like(candidates, dtype=np.uint8)
         for r in regions:
-            nodule_mask[lab == r.label] = 1
+            if r.area > 20:
+                nodule_mask[lab == r.label] = 1
 
         print(f"{len(regions)} composants otsu")
         return nodule_mask
@@ -149,7 +150,8 @@ class Segmenter:
         lab = label(nodule_mask)
         res = np.zeros_like(nodule_mask)
         for r in regionprops(lab):
-            res[lab == r.label] = 1
+            if r.area > 20:
+                res[lab == r.label] = 1
 
         print(f"{len(regionprops(label(res)))} composants region growing ({seed_lower}|{lower}|{upper})")
         return res
@@ -201,17 +203,17 @@ class Segmenter:
         print("Segmentation ...")
         with ThreadPoolExecutor(max_workers=3) as executor:
             f_otsu = executor.submit(self.segment_otsu)
-            f_rg_ggo = executor.submit(self.segment_region_growing, seed_lower=-400, lower=-600, upper=0)
-            f_rg_solid = executor.submit(self.segment_region_growing, seed_lower=-50, lower=-200, upper=400)
+            # f_rg_ggo = executor.submit(self.segment_region_growing, seed_lower=-400, lower=-600, upper=0)
+            f_rg_solid = executor.submit(self.segment_region_growing, seed_lower=-100, lower=-200, upper=400)
 
             nodules_segmented_otsu = f_otsu.result()
-            nodules_segmented_rg_ggo = f_rg_ggo.result()
+            # nodules_segmented_rg_ggo = f_rg_ggo.result()
             nodules_segmented_rg_solid = f_rg_solid.result()
 
         print("Merge nodules segmented ...")
         nodules_mask_roi = self.merge_nodules_segmented(
             nodules_segmented_otsu,
-            nodules_segmented_rg_ggo,
+            # nodules_segmented_rg_ggo,
             nodules_segmented_rg_solid,
         )
 

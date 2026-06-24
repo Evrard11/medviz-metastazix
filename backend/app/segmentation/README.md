@@ -29,13 +29,14 @@ Un offset ZYX est conservé pour la conversion vers les coordonnées globales.
 
 ### 3. Segmentation
 
-3 méthodes fusionnées :
+2 méthodes fusionnées :
 
 | Méthode              | Principe                       | Point fort              |
 |----------------------|--------------------------------|-------------------------|
 | Otsu                 | Seuil global intra-pulmonaires | Larges nodules denses   |
-| Region Growing GGO   | seeds > -400 / [-600, 0]       | Nodules en verre dépoli |
-| Region Growing Solid | seeds > -50 / [-200, 400]      | Nodules solides         |
+| Region Growing Solid | seeds > -100 / [-200, 400]     | Nodules solides         |
+
+Choix d'implémentation: les nodules en verre dépolis ne sont pas détectés par leur proximité aux poumons.
 
 ### 4. Conversion en coordonnées volume
 
