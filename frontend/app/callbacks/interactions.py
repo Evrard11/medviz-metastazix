@@ -44,18 +44,27 @@ def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
         color = ([1, 1, 0] if selected_anomaly == ann.get('id')
                  else ([1, 0, 0] if ann.get('prediction') == 1 else [0, 1, 0])
         if 'prediction' in ann
-        else ([1, 1, 0] if selected_anomaly == ann.get('id') else [0, 0, 1]))
+        else ([1, 1, 0] if selected_anomaly == ann.get('id') else [0.1, 0.6, 1.0]))
 
-        if ann.get('loc') == 'Backend' and 'z_range' in ann:
-            z1, z2 = ann['z_range']
+        is_sphere = (ann.get('loc') == 'Backend' and 'z_range' in ann) or (ann.get('loc') == 'Tracés manuels' and ann.get('type') == 'circle')
+
+        if is_sphere:
+            if 'z_range' in ann:
+                z1, z2 = ann['z_range']
+                cz = (z1 + z2) / 2 * spacing[2]
+                r_z = abs(z2 - z1) / 2 * spacing[2]
+            else:
+                cz = (ann.get('slice', 1) - 1) * spacing[2]
+                r_z = 0.0
+                
             cx = (ann['x0'] + ann['x1']) / 2 * spacing[0]
             cy = (ann['y0'] + ann['y1']) / 2 * spacing[1]
-            cz = (z1 + z2) / 2 * spacing[2]
-            r = max(
+            r_2d = max(
                 abs(ann['x1'] - ann['x0']) / 2 * spacing[0],
-                abs(ann['y1'] - ann['y0']) / 2 * spacing[1],
-                abs(z2 - z1) / 2 * spacing[2],
+                abs(ann['y1'] - ann['y0']) / 2 * spacing[1]
             )
+            r = max(r_2d, r_z) if r_z > 0 else r_2d
+            
             reps.append(
                 dash_vtk.GeometryRepresentation(
                     property={"color": color, "opacity": 0.35},
@@ -74,16 +83,6 @@ def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
                 x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
                 x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
                 path_str = f"M {x0},{y0} L {x1},{y0} L {x1},{y1} L {x0},{y1} Z"
-            elif ann.get('type') == 'circle':
-                x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
-                x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                cx_2d, cy_2d = (x0+x1)/2, (y0+y1)/2
-                rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
-                pts = []
-                for i in range(16):
-                    ang = i * math.pi / 8
-                    pts.append(f"{cx_2d + rx*math.cos(ang)},{cy_2d + ry*math.sin(ang)}")
-                path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
 
             if path_str:
                 pts, polys = svg_path_to_vtk_polydata(path_str, ann.get('slice', 1) - 1, spacing)
@@ -219,7 +218,12 @@ def register_callbacks():
                 continue
 
             if ann.get('slice') == slice_idx:
-                color = "yellow" if selected_anomaly == ann['id'] else "cyan"
+                if selected_anomaly == ann['id']:
+                    color = "yellow"
+                elif ann.get('loc') == 'Tracés manuels':
+                    color = "dodgerblue"
+                else:
+                    color = "red" if ann.get('prediction') == 1 else "lime"
                 
                 shape_dict = dict(
                     type=ann.get('type', 'path'),

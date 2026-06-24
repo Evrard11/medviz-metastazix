@@ -13,7 +13,7 @@ mock_image = np.zeros((512, 512))
 fig_2d = px.imshow(mock_image, color_continuous_scale='gray', template="plotly_dark")
 fig_2d.update_layout(
     dragmode="drawclosedpath",
-    newshape=dict(line_color="cyan", opacity=0.8, line_width=2),
+    newshape=dict(line_color="dodgerblue", opacity=0.8, line_width=2),
     margin=dict(l=0, r=0, b=0, t=0),
     coloraxis_showscale=False,
     uirevision='constant'
