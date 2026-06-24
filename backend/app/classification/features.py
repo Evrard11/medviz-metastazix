@@ -20,7 +20,7 @@ def extract_features(cube: np.ndarray, spacing: tuple, seg_mask: np.ndarray = No
         mask = mask[:min_z, :min_y, :min_x]
         cube = cube[:min_z, :min_y, :min_x]
 
-    if mask.sum() == 0:
+    if mask.sum() < 10:
         return {}
 
     image_sitk = cube_to_sitk(cube, spacing)
