@@ -1,53 +1,9 @@
 import os
-import pathlib
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from app.classification.classifier import load_model
 from app.classification.pipeline import predict_candidates
 from app import db_client
-BASE_DIR = pathlib.Path(__file__).parent
-PKL_PATH = BASE_DIR / "classification" / "modele_xgb.pkl"
-
-model = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global model
-    if PKL_PATH.exists():
-        model = load_model(str(PKL_PATH))
-        print("Model loaded")
-    else:
-        print("No model found, /predict unavailable")
-    yield
-
-app = FastAPI(lifespan=lifespan)
-
-@app.get("/hello")
-async def get_hello():
-    return "hello world!"
-
-@app.post("/predict")
-def predict(data: dict):
-    if model is None:
-        raise HTTPException(503, "Model not loaded")
-    return predict_candidates(data["candidates"], model)
-
-@app.post("/analyze/{exam_id}")
-def analyze(exam_id: int, data: dict):
-    if model is None:
-        raise HTTPException(503, "Model not loaded")
-
-    exam = db_client.get_exam(exam_id)   # lève une erreur HTTP si absent
-
-    results = predict_candidates(data["candidates"], model)
-
-    persisted = db_client.persist_analysis(
-        exam_id=exam_id,
-        algorithm="xgboost",
-        results=results,
-    )
-
-    return persisted
 
 import sys
 import pathlib
@@ -56,8 +12,28 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from pydantic import BaseModel
 from segmentation.patient_manager import PatientManager
 from segmentation.segmenter import Segmenter
-from skimage.measure import marching_cubes
 import numpy as np
+
+BASE_DIR = pathlib.Path(__file__).parent
+PKL_FP_REDUCER = BASE_DIR / "classification" / "model_fp_reducer.pkl"
+PKL_MALIGNANCY = BASE_DIR / "classification" / "model_classifier.pkl"
+
+fp_reducer_model = None
+malignancy_model = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global fp_reducer_model, malignancy_model
+    missing = [p for p in (PKL_FP_REDUCER, PKL_MALIGNANCY) if not p.exists()]
+    if missing:
+        print(f"Model(s) not found: {missing}")
+        exit(1)
+    fp_reducer_model = load_model(str(PKL_FP_REDUCER))
+    malignancy_model = load_model(str(PKL_MALIGNANCY))
+    print("Models loaded (fp_reducer + malignancy classifier)")
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 class ProcessDicomRequest(BaseModel):
     patient_id: str
@@ -65,7 +41,9 @@ class ProcessDicomRequest(BaseModel):
 @app.post("/process_dicom")
 def process_dicom(req: ProcessDicomRequest):
     print("Processing dicom")
-    import os
+    if fp_reducer_model is None or malignancy_model is None:
+        raise HTTPException(503, "Models not loaded")
+
     STORAGE_DIR = os.environ.get("STORAGE_PATH", "/storage")
     if not os.path.exists(STORAGE_DIR):
         # Fallback to local relative path
@@ -79,40 +57,37 @@ def process_dicom(req: ProcessDicomRequest):
         print("Patient path does not exist")
         raise HTTPException(404, "Patient path does not exist")
 
-    # 1. Initialize PatientManager
+    # Initialize PatientManager
     patient = PatientManager()
     patient.init(patient_path)
     
-    # 2. Segment
+    # Segment
     seg = Segmenter(patient)
     candidates = seg.run()
+
+    print(f"{len(candidates)} candidates found after segmentation")
     
-    # 3. Classify
-    if model is not None:
-        classification_results = predict_candidates(candidates, model)
-    else:
-        # Mock prediction if no model
-        classification_results = []
-        for c in candidates:
-            c['malignancy_score'] = 0.99
-            classification_results.append(c)
+    # Classify
+    classification_results = predict_candidates(candidates, fp_reducer_model, malignancy_model, seg.nodules_mask)
+    print(f"{len(classification_results)} candidates found after classification")
     
-    # 4. Generate 3D Volume for rendering
+    # Get volume to render
     volume = patient.volume
     if volume is None:
         return {"error": "Volume not loaded"}
 
-    # Downsample the volume by 4x in each dimension for performance and payload size
+    # Downsample volume 4x (performance, payload size)
     step_z, step_y, step_x = 2, 4, 4
     small_vol = volume[::step_z, ::step_y, ::step_x]
     
-    # Normalize HU to 0-255 for better transport
+    # Normalize HU to 0-255 (performance, payload size)
     small_vol = np.clip(small_vol, -1000, 400).astype(np.float32)
     small_vol = ((small_vol + 1000) / 1400.0 * 255).astype(np.uint8)
     
-    # Dimensions: X, Y, Z
+    # ZYX => XYZ
     dims = [small_vol.shape[2], small_vol.shape[1], small_vol.shape[0]]
-    # Spacing: dx, dy, dz
+
+    # Spacing
     dx = patient.voxel_size[0] * step_x
     dy = patient.voxel_size[1] * step_y
     if len(patient.voxel_size) > 2:
@@ -124,7 +99,6 @@ def process_dicom(req: ProcessDicomRequest):
     for res in classification_results:
         cz, cy, cx = res['centroid']
         z1, y1, x1, z2, y2, x2 = res["bbox"]
-        print(res["bbox"])
         response_candidates.append({
             "centroid": [float(cx), float(cy), float(cz)],
             "score": float(res["malignancy_score"]),
