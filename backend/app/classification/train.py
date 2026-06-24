@@ -15,6 +15,9 @@ from segmentation.segmenter import Segmenter
 from .xml_parser import find_xml_for_series, parse_nodules, build_mask_from_rois, extract_cube
 from .features import extract_features
 from .classifier import save_model
+import logging
+
+logging.getLogger("radiomics").setLevel(logging.CRITICAL)
 
 XML_DIR = os.path.join(os.path.dirname(__file__), '../../LIDC-XML-only')
 DATA_DIR = os.path.join(os.path.dirname(__file__), '../../LIDC_data')
@@ -226,26 +229,43 @@ def build_dataset(rows):
     return df[feature_cols + ["label"]]
 
 
-def train(df, path, label_names=('négatif', 'positif')):
+def _undersample(X, y, label_names, undersample_ratio=10):
+    # ratio undersample_ratio:1 ; FP|TP
+    pos_idx = np.where(y == 1)[0]
+    neg_idx = np.where(y == 0)[0]
+    n_neg_keep = min(len(neg_idx), len(pos_idx) * undersample_ratio)
+    neg_idx_sampled = np.random.default_rng(42).choice(neg_idx, n_neg_keep, replace=False)
+    idx = np.concatenate([pos_idx, neg_idx_sampled])
+    np.random.default_rng(42).shuffle(idx)
+    X, y = X[idx], y[idx]
+
+    print(f"Dataset après undersample: {len(y)} samples")
+    print(f"  {label_names[0]} (0): {(y == 0).sum()} | {label_names[1]} (1): {(y == 1).sum()}")
+    return X, y
+
+def train(df, path, label_names=('négatif', 'positif'), is_FP=False):
     X = df.drop(columns=["label"]).values
     y = df["label"].values
 
-    print(f"Dataset: {len(df)} samples, {X.shape[1]} features")
+    if is_FP:
+        X, y = _undersample(X, y, label_names)
+
+    print(f"Dataset: {len(y)} samples, {X.shape[1]} features")
     print(f"  {label_names[0]} (0): {(y == 0).sum()} | {label_names[1]} (1): {(y == 1).sum()}")
 
     ratio = (y == 0).sum() / max((y == 1).sum(), 1)
-    # 42 FOREVER !
     model = xgb.XGBClassifier(
         scale_pos_weight=ratio,
-        n_estimators=100,
-        max_depth=4,
-        learning_rate=0.1,
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.05,
         subsample=0.8,
+        colsample_bytree=0.8,
+        min_child_weight=5,
         random_state=42,
         eval_metric="logloss",
     )
 
-    # Cross-validation (keep equilibrate classes per fold)
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     auc_scores = cross_val_score(model, X, y, cv=cv, scoring='roc_auc')
     acc_scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy')
@@ -271,7 +291,7 @@ if __name__ == '__main__':
         sys.exit(1)
     df_fp = build_dataset(rows_fp)
     print(f"Dataset FP reducer: {len(df_fp)} samples x {len(df_fp.columns) - 1} features")
-    train(df_fp, 'model_fp_reducer.pkl', label_names=('FP', 'nodule'))
+    train(df_fp, 'model_fp_reducer.pkl', label_names=('FP', 'nodule'), is_FP=True)
 
     print("\nPASS 2 - Malignancy Classifier (bénin vs malin)\n")
     rows_cl = load_parallel(process_patient_classifier, PATIENT_IDS, max_workers=4)

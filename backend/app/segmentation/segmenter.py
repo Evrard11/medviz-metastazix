@@ -178,7 +178,7 @@ class Segmenter:
             cz, cy, cx = int(cz), int(cy), int(cx)
 
             # Sub-volume
-            cube = self.lung[
+            cube = self.patient.volume[
                 max(0, cz - half):cz + half,
                 max(0, cy - half):cy + half,
                 max(0, cx - half):cx + half
@@ -193,7 +193,6 @@ class Segmenter:
             })
 
         self.candidates = candidates
-        print(f"{len(candidates)} candidates.")
 
     def run(self):
         print("Preprocessing ...")
@@ -278,31 +277,6 @@ class Segmenter:
             plt.imshow(self.nodules_mask[z], alpha=0.4, cmap='Reds')
             plt.title(f"Segmentation - tranche {z}")
             plt.show()
-
-    def display_candidates_3d(self, max_display=10):
-        """DEBUG: display lung candidates"""
-        fig = plt.figure(figsize=(15, 5))
-        n = min(len(self.candidates), max_display)
-
-        for i, c in enumerate(self.candidates[:max_display]):
-            ax = fig.add_subplot(1, n, i + 1, projection='3d')
-
-            cz, cy, cx = c['centroid']
-            half = 16
-
-            patch_mask = self.nodules_mask[
-                         max(0, cz - half):cz + half,
-                         max(0, cy - half):cy + half,
-                         max(0, cx - half):cx + half
-                         ]
-
-            z, y, x = np.where(patch_mask > 0)
-            ax.scatter(x, y, z, c='red', s=2, alpha=0.6)
-            ax.set_title(f"#{i}\n{c['area']:.0f} vox")
-            ax.axis('off')
-
-        plt.tight_layout()
-        plt.show()
 
     # endregion Display
 

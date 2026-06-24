@@ -1,5 +1,8 @@
 import numpy as np
 from .features import extract_features
+import logging
+
+logging.getLogger("radiomics").setLevel(logging.CRITICAL)
 
 _SEG_HALF = 16 # see train.py
 
@@ -43,7 +46,7 @@ def predict_candidates(candidates, fp_reducer, malignancy_model, nodules_mask=No
         if feat_vec is None:
             continue
         fp_proba = fp_reducer.predict_proba(feat_vec.reshape(1, -1))[0][1]
-        if fp_proba < 0.5:
+        if fp_proba < 0.7:
             continue  # FP
 
         # malignancy score

@@ -64,7 +64,6 @@ class PatientManager:
             mask = sitk.GetArrayFromImage(seg_image)
             self.seg_masks.append(mask)
             self.seg_metas.append(seg_ds)
-            print(f"Mask slices : {mask.shape[0]}")
 
     def remap_seg_to_ct(self, id : int):
         """
@@ -102,7 +101,6 @@ class PatientManager:
         for i in range(len(self.seg_masks)):
             m = self.remap_seg_to_ct(i)
             slices = np.where(m.any(axis=(1,2)))[0]
-            print(f"Masque {i} impacted slices CT : {slices}")
             masks3D.append(m)
 
         # Merge masks
