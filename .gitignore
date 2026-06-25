@@ -230,3 +230,7 @@ uv.lock
 
 #Dicom
 dicom/
+all_codebase.py
+all_python_files.txt
+to_send
+.idea/
