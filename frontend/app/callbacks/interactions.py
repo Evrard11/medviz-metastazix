@@ -770,3 +770,14 @@ def register_callbacks():
 
         all_annotations = backend_annotations + db_annotations
         return resp_data if resp_data else no_update, all_annotations
+
+
+    @app.callback(
+        Output('patients-store', 'data', allow_duplicate=True),
+        Input('patients-list', 'id'),   # déclenché à l'initialisation
+        prevent_initial_call='initial_duplicate'
+    )
+    def load_patients_on_refresh(_):
+        """Recharger la liste depuis la DB à chaque chargement de page."""
+        from data.db_client import get_patients
+        return get_patients()
