@@ -596,7 +596,7 @@ def register_callbacks():
         patients_data.append(new_patient)
 
         # Return patients, the 3d model data, annotations and close modal
-        return patients_data, resp_data, annotations_data + new_annotations, False
+        return patients_data, resp_data, new_annotations, False
 
     @app.callback(
         Output('patients-list', 'children'),
