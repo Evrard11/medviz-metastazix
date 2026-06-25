@@ -109,6 +109,9 @@ def _apply_resp_data(resp_data: dict) -> list:
 
     return _parse_anomalies(resp_data.get("anomalies", []))
 
+from functools import lru_cache
+
+@lru_cache(maxsize=10)
 def _call_backend(patient_id: str) -> dict | None:
     import os, requests
     BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
