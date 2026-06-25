@@ -170,10 +170,14 @@ center_column = dmc.Stack(
                                     style={"width": "100%", "height": "100%", "flex": 1},
                                     children=[
                                         dash_vtk.GeometryRepresentation(
+                                            id="lung-mesh-repr",
+                                            property={"color": [1, 1, 1], "opacity": 0.15, "edgeVisibility": False},
                                             children=[
                                                 dash_vtk.PolyData(points=lung_points, polys=lung_polys)
                                             ]
-                                        )
+                                        ),
+                                        dash_vtk.GeometryRepresentation(id="slice-plane-repr"),
+                                        html.Div(id="vtk-annotations-container", style={"display": "none"}, children=[])
                                     ]
                                 )
                             ]

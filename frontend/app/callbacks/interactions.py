@@ -1,4 +1,4 @@
-from dash import Input, Output, State, ALL, ctx, no_update, Patch
+from dash import Input, Output, State, ALL, ctx, no_update, Patch, html
 from core import app
 import dash_vtk
 import plotly.express as px
@@ -324,7 +324,7 @@ def register_callbacks():
             triggerRender = 0
             
             ann_reps = _build_vtk_annotations_list(annotations, selected_anomaly, model_data)
-            vtk_children.extend(ann_reps)
+            vtk_children.append(html.Div(id="vtk-annotations-container", style={"display": "none"}, children=ann_reps))
             ann_count = len(ann_reps)
         else:
             vtk_children = [
@@ -333,7 +333,8 @@ def register_callbacks():
                     property={"color": [1, 1, 1], "opacity": 0.15, "edgeVisibility": False},
                     children=[dash_vtk.PolyData(points=lung_points, polys=lung_polys)]
                 ),
-                dash_vtk.GeometryRepresentation(id="slice-plane-repr")
+                dash_vtk.GeometryRepresentation(id="slice-plane-repr"),
+                html.Div(id="vtk-annotations-container", style={"display": "none"}, children=[])
             ]
             triggerRender = 1
             ann_count = 0
@@ -349,7 +350,7 @@ def register_callbacks():
         return [view_component], ann_count
 
     @app.callback(
-        Output('vtk-view', 'children'),
+        Output('vtk-annotations-container', 'children'),
         Output('ann-count-store', 'data'),
         Input('annotations-store', 'data'),
         Input('selected-anomaly-store', 'data'),
@@ -359,7 +360,7 @@ def register_callbacks():
     )
     def update_vtk_annotations(store_data, selected_anomaly, model_data, ann_count):
         """
-        Dynamically append/remove annotations using Patch(), leaving the VolumeRepresentation untouched.
+        Dynamically append/remove annotations in a dedicated container, leaving the View untouched.
         This prevents resetting user settings ('Use shadow', 'Rainbow').
         """
         import dash
@@ -370,18 +371,9 @@ def register_callbacks():
         if 'current-3d-model' in triggered_ids:
             return dash.no_update, dash.no_update
         
-        patch = Patch()
-        ann_count = ann_count or 0
-        
-        # Remove previous annotations from the Patch array
-        for _ in range(ann_count):
-            del patch[-1]
-            
         ann_reps = _build_vtk_annotations_list(store_data, selected_anomaly, model_data)
-        for rep in ann_reps:
-            patch.append(rep)
                     
-        return patch, len(ann_reps)
+        return ann_reps, len(ann_reps)
 
     @app.callback(
         Output('slice-plane-poly', 'points'),
