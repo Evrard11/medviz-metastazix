@@ -23,6 +23,8 @@ Metastazix est un outil d'aide au diagnostic destiné aux radiologues. Il permet
 5. Les annotations peuvent être ajoutées, sélectionnées ou supprimées manuellement
 6. Un rapport peut être généré depuis le panneau latéral
 
+![Application overwiew](application_overview.png)
+
 ## Architecture
 4 services Docker communiquant entre eux :
 
