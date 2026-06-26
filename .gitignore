@@ -1,6 +1,9 @@
 # Own specific needs
 LIDC_data/
 .dcm
+.DS_Store
+storage
+*.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,0 +1,19 @@
+[project]
+name = "medviz-metastazix-tests"
+version = "1.0.0"
+requires-python = ">=3.12"
+description = "Medical application to detect pulmonary nodules"
+authors = [
+    {name = "thomas.graveline-mercier"},
+    {name = "evrard.casamayou"},
+    {name = "gabin.clerbout"},
+    {name = "elie.dalmas"},
+    {name = "alex.dreau"}
+]
+
+dependencies = [
+    "playwright",
+    "pytest",
+    "pytest-playwright",
+    "pathlib",
+]
