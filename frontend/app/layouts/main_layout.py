@@ -1,7 +1,5 @@
 import dash_mantine_components as dmc
 from dash_iconify import DashIconify
-from data.db_client import get_patients
-from components.cards import patient_card, anomaly_card
 from dash import dcc, html
 import plotly.express as px
 import numpy as np
@@ -108,7 +106,6 @@ center_column = dmc.Stack(
         dcc.Store(id='selected-anomaly-store', data=None),
         dcc.Store(id='current-3d-model', data=None),
         dcc.Store(id='upload-content-store', data=None),
-        dcc.Store(id='ann-count-store', data=0),
         dcc.Loading(
             id="loading-3d",
             type="circle",

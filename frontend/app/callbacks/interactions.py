@@ -1,17 +1,22 @@
-from dash import Input, Output, State, ALL, ctx, no_update, Patch, html
-from core import app
-import dash_vtk
-import plotly.express as px
+import base64
+from functools import lru_cache
+import json
+import os
 import uuid
-import math
+import zipfile
+
+import dash_mantine_components as dmc
+import dash_vtk
+from dash import Input, Output, State, ALL, ctx, no_update, Patch, html
+import numpy as np
+import requests
+
+from core import app
 from data.backend_integration import segmenter, lung_points, lung_polys
 from components.cards import anomaly_card
 from utils.parsing_utils import svg_path_to_vtk_polydata
 
 # region HELPERS
-
-import uuid as _uuid
-import numpy as np
 
 def _parse_anomalies(anomalies: list) -> list:
     """Convert backend anomaly dicts into annotation store entries (1 per nodule)."""
@@ -21,7 +26,7 @@ def _parse_anomalies(anomalies: list) -> list:
         score = res.get("score", 0)
         pred = "Malignant" if score > 0.5 else "Benign"
         annotations.append({
-            "id":         f"AUTO-{_uuid.uuid4().hex[:8].upper()}",
+            "id":         f"AUTO-{uuid.uuid4().hex[:8].upper()}",
             "slice":      int((z1 + z2) / 2) + 1,   # central slice, 1-indexed
             "z_range":    [int(z1), int(z2)],         # full extent for 2-D filtering
             "type":       "circle",
@@ -35,8 +40,6 @@ def _parse_anomalies(anomalies: list) -> list:
 
 
 def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
-    import dash_vtk
-    import math
     reps = []
     spacing = model_data.get("spacing", [1, 1, 1]) if model_data else [1, 1, 1]
     
@@ -113,7 +116,6 @@ from functools import lru_cache
 
 @lru_cache(maxsize=10)
 def _call_backend(patient_id: str) -> dict | None:
-    import os, requests
     BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
     try:
         resp = requests.post(f"{BACKEND_URL}/process_dicom", json={"patient_id": patient_id})
@@ -263,7 +265,6 @@ def register_callbacks():
 
     @app.callback(
         Output('vtk-container', 'children'),
-        Output('ann-count-store', 'data', allow_duplicate=True),
         Input('current-3d-model', 'data'),
         State('slice-slider', 'value'),
         State('annotations-store', 'data'),
@@ -274,8 +275,6 @@ def register_callbacks():
         """
         Rebuild the 3D VTK view ONLY when the underlying 3D model changes.
         """
-        import dash_vtk
-        
         if model_data and "volume" in model_data:
             volume_data = model_data["volume"]
             dims = model_data["dimensions"]
@@ -328,7 +327,6 @@ def register_callbacks():
             
             ann_reps = _build_vtk_annotations_list(annotations, selected_anomaly, model_data)
             vtk_children.append(html.Div(id="vtk-annotations-container", style={"display": "none"}, children=ann_reps))
-            ann_count = len(ann_reps)
         else:
             vtk_children = [
                 dash_vtk.GeometryRepresentation(
@@ -340,7 +338,6 @@ def register_callbacks():
                 html.Div(id="vtk-annotations-container", style={"display": "none"}, children=[])
             ]
             triggerRender = 1
-            ann_count = 0
 
         view_component = dash_vtk.View(
             id="vtk-view",
@@ -350,33 +347,27 @@ def register_callbacks():
             children=vtk_children
         )
                 
-        return [view_component], ann_count
+        return [view_component]
 
     @app.callback(
         Output('vtk-annotations-container', 'children'),
-        Output('ann-count-store', 'data'),
         Input('annotations-store', 'data'),
         Input('selected-anomaly-store', 'data'),
         Input('current-3d-model', 'data'),
-        State('ann-count-store', 'data'),
         prevent_initial_call=True
     )
-    def update_vtk_annotations(store_data, selected_anomaly, model_data, ann_count):
+    def update_vtk_annotations(store_data, selected_anomaly, model_data):
         """
         Dynamically append/remove annotations in a dedicated container, leaving the View untouched.
         This prevents resetting user settings ('Use shadow', 'Rainbow').
         """
-        import dash
-        import dash_vtk
-        import math
-        
-        triggered_ids = [t['prop_id'].split('.')[0] for t in dash.callback_context.triggered]
+        triggered_ids = [t['prop_id'].split('.')[0] for t in ctx.triggered]
         if 'current-3d-model' in triggered_ids:
-            return dash.no_update, dash.no_update
+            return no_update
         
         ann_reps = _build_vtk_annotations_list(store_data, selected_anomaly, model_data)
                     
-        return ann_reps, len(ann_reps)
+        return ann_reps
 
     @app.callback(
         Output('slice-plane-poly', 'points'),
@@ -442,7 +433,7 @@ def register_callbacks():
         State('slice-slider', 'value'),
         prevent_initial_call=True
     )
-    def select_anomaly(n_clicks_list, store_data, current_slice):
+    def select_anomaly(_, store_data, current_slice):
         """
         Handle clicks on anomaly cards to select them and update the 
         slice slider to the anomaly's location.
@@ -470,7 +461,7 @@ def register_callbacks():
         State('annotations-store', 'data'),
         prevent_initial_call=True
     )
-    def delete_anomaly(n_clicks_list, store_data):
+    def delete_anomaly(_, store_data):
         """
         Handle clicks on the trash icon to delete an anomaly from the store.
         """
@@ -514,7 +505,7 @@ def register_callbacks():
         Input('upload-dicom-2d', 'contents'),
         prevent_initial_call=True
     )
-    def handle_upload(contents1, contents2):
+    def handle_upload(_1, _2):
         if not ctx.triggered:
             return no_update
         contents = ctx.triggered[0]['value']
@@ -543,18 +534,11 @@ def register_callbacks():
         State('patient-sex-input', 'value'),
         State('upload-content-store', 'data'),
         State('patients-store', 'data'),
-        State('annotations-store', 'data'),
         prevent_initial_call=True
     )
-    def process_dicom_upload(n_clicks, name, age, sex, contents, patients_data, annotations_data):
+    def process_dicom_upload(n_clicks, name, age, sex, contents, patients_data):
         if not n_clicks or not contents:
             return no_update, no_update, no_update, no_update
-            
-        import base64
-        import os
-        import requests
-        import zipfile
-        import uuid
         
         # Save ZIP
         content_type, content_string = contents.split(',')
@@ -609,8 +593,6 @@ def register_callbacks():
         Input('annotations-store', 'data')
     )
     def update_traces_info(annotations):
-        import dash_mantine_components as dmc
-        from components.cards import anomaly_card
         
         manual_traces = [a for a in annotations if a.get('loc') == 'Tracés manuels']
         if not manual_traces:
@@ -634,20 +616,15 @@ def register_callbacks():
         State('annotations-store', 'data'),
         prevent_initial_call=True
     )
-    def handle_report_modal(open_clicks, close_clicks, patients, annotations):
-        import dash
-        ctx = dash.callback_context
+    def handle_report_modal(_1, _2, patients, annotations):
         if not ctx.triggered:
-            return False, dash.no_update
+            return False, no_update
         
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
         if trigger_id == 'close-report-btn':
-            return False, dash.no_update
+            return False, no_update
             
-        import dash_mantine_components as dmc
-        from dash import html
-        
         patient = patients[-1] if patients else {"name": "Inconnu", "age": "N/A", "sex": "N/A"}
         
         auto_anomalies = [a for a in annotations if a.get('loc') == 'Backend']
@@ -698,11 +675,10 @@ def register_callbacks():
         Input({'type': 'patient-card', 'index': ALL}, 'n_clicks'),
         prevent_initial_call=True
     )
-    def switch_patient(n_clicks_list):
+    def switch_patient(_):
         if not ctx.triggered or ctx.triggered[0]['value'] in (None, 0):
             return no_update, no_update
 
-        import json
         triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
         patient_id = triggered_id['index']
 
