@@ -91,7 +91,7 @@ class Segmenter:
 
     def segment_otsu(self):
         """
-        Nice work on big objects
+        Detect objects clean & visible
         :return: nodules mask
         """
         print("Otsu segmentation ...")
@@ -118,7 +118,7 @@ class Segmenter:
 
     def segment_region_growing(self, seed_lower, lower, upper):
         """
-        Nice work on small objects
+        Detect objects locals structures & low contrasts
         :param lower: HU lower bound
         :param upper: HU upper bound
         :return: nodules mask
@@ -356,4 +356,4 @@ class Segmenter:
 
         return float(inter / union) if union > 0 else 0.0
 
-    # TestHelper
+    # endregion TestHelper

@@ -31,10 +31,10 @@ Un offset ZYX est conservé pour la conversion vers les coordonnées globales.
 
 2 méthodes fusionnées :
 
-| Méthode              | Principe                       | Point fort              |
-|----------------------|--------------------------------|-------------------------|
-| Otsu                 | Seuil global intra-pulmonaires | Larges nodules denses   |
-| Region Growing Solid | seeds > -100 / [-200, 400]     | Nodules solides         |
+| Méthode              | Principe                       | Point fort                               |
+|----------------------|--------------------------------|------------------------------------------|
+| Otsu                 | Seuil global intra-pulmonaires | objets propres et visibles               |
+| Region Growing Solid | seeds > -100 / [-200, 400]     | structures locales et faibles contrastes |
 
 Choix d'implémentation: les nodules en verre dépolis ne sont pas détectés par leur proximité aux poumons.
 
