@@ -5,9 +5,17 @@ from app.segmentation.downloader import LidcIdriDownloader
 from app.segmentation.patient_manager import PatientManager
 from app.segmentation.segmenter import Segmenter
 
-# 4: too black
-# 7: merge with trachea
-PATIENT_IDS = [f'LIDC-IDRI-{i:04d}' for i in [1,3,7,10,11]]
+# tests only on nodule not GGO
+PATIENT_IDS = [
+    'LIDC-IDRI-0001', 'LIDC-IDRI-0003', 'LIDC-IDRI-0007', 'LIDC-IDRI-0009',
+    'LIDC-IDRI-0011', 'LIDC-IDRI-0012', 'LIDC-IDRI-0015', 'LIDC-IDRI-0017',
+    'LIDC-IDRI-0031', 'LIDC-IDRI-0033', 'LIDC-IDRI-0036', 'LIDC-IDRI-0037',
+    'LIDC-IDRI-0042', 'LIDC-IDRI-0045', 'LIDC-IDRI-0046', 'LIDC-IDRI-0050',
+    'LIDC-IDRI-0051', 'LIDC-IDRI-0053', 'LIDC-IDRI-0054', 'LIDC-IDRI-0059',
+    'LIDC-IDRI-0060', 'LIDC-IDRI-0061', 'LIDC-IDRI-0063', 'LIDC-IDRI-0068',
+    'LIDC-IDRI-0075', 'LIDC-IDRI-0079', 'LIDC-IDRI-0086', 'LIDC-IDRI-0089',
+    'LIDC-IDRI-0097', 'LIDC-IDRI-0098',
+]
 
 ROOT = Path(__file__).parent.parent
 
