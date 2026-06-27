@@ -3,20 +3,29 @@ import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from segmentation.downloader import LidcIdriDownloader
+from .downloader import LidcIdriDownloader
 from skimage.measure import label, regionprops
 
 class PatientManager:
+    """
+    PatientManager class
+    Extract volume + annotations from patient dicom directory
+    """
     # volume format: (Z, Y, X)
     volume : np.ndarray = None
     seg_masks: list[np.ndarray] = None
     dicom_files = None
     seg_metas = None
 
-    def __init__(self, pid, dl: LidcIdriDownloader):
-        self.patient_path = dl.get_patient_path(pid)
+    def __init__(self, pid="", dl: LidcIdriDownloader=None):
+        if dl is None:
+            self.patient_path = None
+        else:
+            self.patient_path = dl.get_patient_path(pid)
 
-    def init(self):
+    def init(self, patient_path=None):
+        if patient_path is not None:
+            self.patient_path = patient_path
         ct_path = None
         seg_paths = []
         # Get CT and SEG files
@@ -55,13 +64,12 @@ class PatientManager:
             mask = sitk.GetArrayFromImage(seg_image)
             self.seg_masks.append(mask)
             self.seg_metas.append(seg_ds)
-            print(f"Mask slices : {mask.shape[0]}")
 
     def remap_seg_to_ct(self, id : int):
         """
         Replace SEG mask on volume
         :param id: i-th SEG
-        :return:
+        :return: volume with annotations
         """
         seg_ds = self.seg_metas[id]
         seg_mask = self.seg_masks[id]
@@ -93,7 +101,6 @@ class PatientManager:
         for i in range(len(self.seg_masks)):
             m = self.remap_seg_to_ct(i)
             slices = np.where(m.any(axis=(1,2)))[0]
-            print(f"Masque {i} impacted slices CT : {slices}")
             masks3D.append(m)
 
         # Merge masks
@@ -102,6 +109,7 @@ class PatientManager:
         return annotations
 
     def display_volume_with_annotations(self):
+        """DEBUG: Show all images with annotations"""
         annotations = self.get_volume_with_annotations()
 
         for z in range(self.volume.shape[0]):

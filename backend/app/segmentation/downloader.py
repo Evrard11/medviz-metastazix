@@ -6,6 +6,9 @@ import pydicom
 import os
 
 class LidcIdriDownloader:
+    """
+    Télécharge localement les dicoms depuis LIDC-IDRI
+    """
     patient_ids : list[str] = []
     patients_files_info : dict = {}
     dir_path : Path = ""
@@ -41,6 +44,7 @@ class LidcIdriDownloader:
             nbia.downloadSeries(ct_uids, input_type="list", path=self.get_patient_path(pid))
 
     def fill_patients_files_info(self) -> None:
+        """Fetch dicom paths"""
         for pid in self.patient_ids:
             patient_path = self.get_patient_path(pid)
             subdirs = {d: len(os.listdir(os.path.join(patient_path, d)))
@@ -49,6 +53,7 @@ class LidcIdriDownloader:
             self.patients_files_info[pid] = subdirs
 
     def get_patient_files_info(self, pid):
+        """Display number of CT + SEG"""
         # get files info
         if set(self.patients_files_info.keys()) == set(self.patient_ids):
             self.fill_patients_files_info()

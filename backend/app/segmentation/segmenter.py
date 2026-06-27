@@ -1,8 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
 
-from segmentation.patient_manager import PatientManager
+from .patient_manager import PatientManager
 from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops
 import SimpleITK as sitk
@@ -50,8 +52,9 @@ class Segmenter:
         big2_labels = np.argsort(sizes)[-2:] + 1
         lung_mask = np.isin(labels, big2_labels)
 
-        # Dilatation to get pleural nodule (on wall lung)
+        # Dilatation to get pleural nodule
         lung_mask = ndimage.binary_dilation(lung_mask, iterations=dilation_it)
+        # Erosion remove border wall
         lung_mask = ndimage.binary_erosion(lung_mask, iterations=erosion_it)
 
         return lung_mask.astype(np.uint8)
@@ -89,8 +92,9 @@ class Segmenter:
     def segment_otsu(self):
         """
         Nice work on big objects
-        :return:
+        :return: nodules mask
         """
+        print("Otsu segmentation ...")
         # get threshold from otsu
         bool_roi = self.lung[self.lung_mask == 1]
         thr = threshold_otsu(bool_roi)
@@ -99,30 +103,30 @@ class Segmenter:
 
         # Erode to break connexions with wall lung
         eroded = ndimage.binary_erosion(candidates, iterations=2)
+        closed = ndimage.binary_closing(eroded, iterations=3)
 
-        lab = label(eroded)
+        lab = label(closed)
         regions = regionprops(lab)
 
         nodule_mask = np.zeros_like(candidates, dtype=np.uint8)
         for r in regions:
-            # too small => vessel, too big => trachea
-            if 50 < r.area < 10000:
+            if r.area > 20:
                 nodule_mask[lab == r.label] = 1
 
         print(f"{len(regions)} composants otsu")
         return nodule_mask
 
-    def segment_region_growing(self, lower=-100, upper=400):
+    def segment_region_growing(self, seed_lower, lower, upper):
         """
         Nice work on small objects
-        :param lower:
-        :param upper:
-        :return:
+        :param lower: HU lower bound
+        :param upper: HU upper bound
+        :return: nodules mask
         """
-
+        print(f"Region growing segmentation ({seed_lower}|{lower}|{upper}) ...")
         sitk_img = sitk.GetImageFromArray(self.lung.astype(np.float32))
 
-        seeds_mask = (self.lung > lower) & (self.lung_mask == 1)
+        seeds_mask = (self.lung > seed_lower) & (self.lung_mask == 1)
         lab_seeds = label(seeds_mask)
         seed_regions = regionprops(lab_seeds)
 
@@ -146,14 +150,14 @@ class Segmenter:
         lab = label(nodule_mask)
         res = np.zeros_like(nodule_mask)
         for r in regionprops(lab):
-            if 50 < r.area < 10000:
+            if r.area > 20:
                 res[lab == r.label] = 1
 
-        print(f"{len(regionprops(label(res)))} composants region growing")
+        print(f"{len(regionprops(label(res)))} composants region growing ({seed_lower}|{lower}|{upper})")
         return res
 
-    def merge_nodules_segmented(self, mask1, mask2):
-        return np.logical_or(mask1, mask2).astype(np.uint8)
+    def merge_nodules_segmented(self, *masks: np.ndarray) -> np.ndarray:
+        return np.logical_or.reduce(masks).astype(np.uint8)
 
     # endregion Segmentation
 
@@ -161,9 +165,9 @@ class Segmenter:
 
     def get_candidates(self, patch_size=32):
         """
-        Create a list of cube center on composant
-        :param patch_size:
-        :return:
+        Create a list of cube center on component
+        :param patch_size: size of patch
+        :return: list of candidates in nodules mask post-segmentation
         """
         lab = label(self.nodules_mask)
         regions = regionprops(lab)
@@ -176,7 +180,7 @@ class Segmenter:
             cz, cy, cx = int(cz), int(cy), int(cx)
 
             # Sub-volume
-            cube = self.lung[
+            cube = self.patient.volume[
                 max(0, cz - half):cz + half,
                 max(0, cy - half):cy + half,
                 max(0, cx - half):cx + half
@@ -191,19 +195,27 @@ class Segmenter:
             })
 
         self.candidates = candidates
-        print(f"{len(candidates)} candidates.")
 
     def run(self):
         print("Preprocessing ...")
         self.preprocess()
 
         print("Segmentation ...")
-        print("Otsu segmentation ...")
-        nodules_segmented_ostu = self.segment_otsu()
-        print("Region growing segmentation ...")
-        nodules_segmented_rg = self.segment_region_growing()
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_otsu = executor.submit(self.segment_otsu)
+            # f_rg_ggo = executor.submit(self.segment_region_growing, seed_lower=-400, lower=-600, upper=0)
+            f_rg_solid = executor.submit(self.segment_region_growing, seed_lower=-100, lower=-200, upper=400)
+
+            nodules_segmented_otsu = f_otsu.result()
+            # nodules_segmented_rg_ggo = f_rg_ggo.result()
+            nodules_segmented_rg_solid = f_rg_solid.result()
+
         print("Merge nodules segmented ...")
-        nodules_mask_roi = self.merge_nodules_segmented(nodules_segmented_ostu, nodules_segmented_rg)
+        nodules_mask_roi = self.merge_nodules_segmented(
+            nodules_segmented_otsu,
+            # nodules_segmented_rg_ggo,
+            nodules_segmented_rg_solid,
+        )
 
         # convert back to volume total
         oz, oy, ox = self.get_roi_offset()
@@ -228,12 +240,12 @@ class Segmenter:
         z_idx, y_idx, x_idx = np.where(self.total_lung_mask)
         return z_idx.min(), y_idx.min(), x_idx.min()
 
-    def _to_roi_slice(self, slice_idx):
-        """offset due to slices reduction"""
+    def _to_roi_slice(self, slice_idx: int) -> int:
+        """Convert volume slice index to ROI slice index"""
         z_offset = np.where(self.total_lung_mask)[0].min()
         return slice_idx - z_offset
 
-    def display_lung_mask(self, slice_idx):
+    def display_lung_mask(self, slice_idx: int):
         """DEBUG: display lung mask"""
         plt.figure(figsize=(6, 6))
         plt.imshow(self.patient.volume[slice_idx], cmap='gray', vmin=-1000, vmax=400)
@@ -241,7 +253,7 @@ class Segmenter:
         plt.title(f"Masque pulmonaire - tranche {slice_idx}")
         plt.show()
 
-    def display_roi(self, slice_idx):
+    def display_roi(self, slice_idx: int):
         """DEBUG: display roi slice"""
         roi_slice = self._to_roi_slice(slice_idx)
         plt.figure(figsize=(6, 6))
@@ -249,62 +261,46 @@ class Segmenter:
         plt.title(f"Slice {slice_idx} (roi idx {roi_slice})")
         plt.show()
 
-    def display_segmentation(self, slice_idx):
+    def display_segmentation(self, slice_idx: int):
         """DEBUG: display segmentation slice"""
-        roi_slice = self._to_roi_slice(slice_idx)
         plt.figure(figsize=(6, 6))
-        plt.imshow(self.lung[roi_slice], cmap='gray', vmin=-1000, vmax=400)
-        plt.imshow(self.nodules_mask[roi_slice], alpha=0.4, cmap='Reds')
-        plt.title(f"Segmentation - tranche {slice_idx} (roi idx {roi_slice})")
+        plt.imshow(self.patient.volume[slice_idx], cmap='gray', vmin=-1000, vmax=400)
+        plt.imshow(self.nodules_mask[slice_idx], alpha=0.4, cmap='Reds')
+        plt.title(f"Segmentation - tranche {slice_idx}")
         plt.show()
 
     def display_segmentation_all(self):
         """DEBUG: display all slices with segmentation"""
-        z_offset = np.where(self.total_lung_mask)[0].min()
-        for roi_slice in range(self.lung.shape[0]):
-            if not self.nodules_mask[roi_slice].any():
+        for z in range(self.patient.volume.shape[0]):
+            if not self.nodules_mask[z].any():
                 continue
             plt.figure(figsize=(6, 6))
-            plt.imshow(self.lung[roi_slice], cmap='gray', vmin=-1000, vmax=400)
-            plt.imshow(self.nodules_mask[roi_slice], alpha=0.4, cmap='Reds')
-            plt.title(f"Segmentation - roi idx {roi_slice} (volume idx {roi_slice + z_offset})")
+            plt.imshow(self.patient.volume[z], cmap='gray', vmin=-1000, vmax=400)
+            plt.imshow(self.nodules_mask[z], alpha=0.4, cmap='Reds')
+            plt.title(f"Segmentation - tranche {z}")
             plt.show()
-
-    def display_candidates_3d(self, max_display=10):
-        """DEBUG: display lung candidates"""
-        fig = plt.figure(figsize=(15, 5))
-        n = min(len(self.candidates), max_display)
-
-        for i, c in enumerate(self.candidates[:max_display]):
-            ax = fig.add_subplot(1, n, i + 1, projection='3d')
-
-            cz, cy, cx = c['centroid']
-            half = 16
-
-            # Extract cube
-            patch_mask = self.nodules_mask[
-                max(0, cz - half):cz + half,
-                max(0, cy - half):cy + half,
-                max(0, cx - half):cx + half
-            ]
-
-            z, y, x = np.where(patch_mask > 0)
-            ax.scatter(x, y, z, c='red', s=2, alpha=0.6)
-            ax.set_title(f"#{i}\n{c['area']:.0f} vox")
-            ax.axis('off')
-
-        plt.tight_layout()
-        plt.show()
 
     # endregion Display
 
     # region TestHelper
+    @staticmethod
+    def _bbox_intersection_volume(bbox_a: tuple, bbox_b: tuple) -> float:
+        """:return: volume of inter of bbox, 0 if no overlap"""
+        az1, ay1, ax1, az2, ay2, ax2 = bbox_a
+        bz1, by1, bx1, bz2, by2, bx2 = bbox_b
+
+        iz1, iy1, ix1 = max(az1, bz1), max(ay1, by1), max(ax1, bx1)
+        iz2, iy2, ix2 = min(az2, bz2), min(ay2, by2), min(ax2, bx2)
+
+        dz, dy, dx = iz2 - iz1, iy2 - iy1, ix2 - ix1
+        if dz <= 0 or dy <= 0 or dx <= 0:
+            return 0.0
+        return float(dz * dy * dx)
 
     @staticmethod
     def match_candidates(
             annotations: list[dict],
             candidates: list[dict],
-            max_dist: float = 15.0
     ) -> list[tuple[dict, dict]]:
         """
         1-to-1 matches btw annotation and segmentation within a max distance
@@ -316,19 +312,19 @@ class Segmenter:
 
         for ann in annotations:
             az, ay, ax = ann['centroid']
-            min_dist, min_idx = float('inf'), None
+            best_idx, min_dist = None, float('inf')
+
             for i, cand in enumerate(candidates):
                 if i in used:
                     continue
                 cz, cy, cx = cand['centroid']
-                # euclidian dist
                 dist = np.sqrt((az - cz) ** 2 + (ay - cy) ** 2 + (ax - cx) ** 2)
                 if dist < min_dist:
-                    min_dist, min_idx = dist, i
+                    min_dist, best_idx = dist, i
 
-            if min_idx is not None and min_dist <= max_dist:
-                pairs.append((ann, candidates[min_idx]))
-                used.add(min_idx)
+            if best_idx is not None:
+                pairs.append((ann, candidates[best_idx]))
+                used.add(best_idx)
 
         return pairs
 
