@@ -14,5 +14,9 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "psycopg2-binary",
-    "requests"
+    "requests",
+    "pytest"
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
