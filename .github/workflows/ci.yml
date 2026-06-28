@@ -102,22 +102,26 @@ jobs:
         working-directory: database
         run: uv sync
 
-      - name: Run API tests
-        working-directory: database
+      # - name: Run API tests
+      #   working-directory: database
+      #   env:
+      #     DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
+      #   run: uv run pytest app/test_api.py -v
+      # - name: Run repository tests
+      #   working-directory: database
+      #   env:
+      #     DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
+      #   run: uv run pytest app/test_repo.py -v
+      - name: Run tests
+        working-directory: database/app
         env:
           DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
-        run: uv run pytest app/test_api.py -v
-
-      - name: Run repository tests
-        working-directory: database
-        env:
-          DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
-        run: uv run pytest app/test_repo.py -v
+        run: uv run pytest . -v
 
   deploy:
     name: Publish images to GHCR
     runs-on: ubuntu-latest
-    needs: [build, tests-backend, tests-database]  # les 3 jobs doivent passer
+    needs: [build, tests-backend, tests-database]  # the 3 jobs must succeed before this one runs
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
