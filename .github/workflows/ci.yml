@@ -106,13 +106,13 @@ jobs:
         working-directory: database
         env:
           DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
-        run: uv run pytest test_api.py -v
+        run: uv run pytest app/test_api.py -v
 
       - name: Run repository tests
         working-directory: database
         env:
           DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
-        run: uv run pytest test_repo.py -v
+        run: uv run pytest app/test_repo.py -v
 
   deploy:
     name: Publish images to GHCR
