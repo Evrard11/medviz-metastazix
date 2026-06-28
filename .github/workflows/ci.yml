@@ -71,7 +71,6 @@ jobs:
     name: Database service unit tests
     runs-on: ubuntu-latest
 
-    # PostgreSQL available for test_repo.py
     services:
       postgres:
         image: postgres
@@ -93,7 +92,13 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git gcc g++ cmake build-essential
+          sudo apt-get install -y git gcc g++ cmake build-essential postgresql-client
+
+      - name: Initialize database schema
+        # Replace the docker-entrypoint-initdb.d of the docker-compose
+        run: |
+          PGPASSWORD=password psql -h localhost -U user -d mydatabase -f database/db/01_schema.sql
+          PGPASSWORD=password psql -h localhost -U user -d mydatabase -f database/db/02_seed.sql
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -102,21 +107,37 @@ jobs:
         working-directory: database
         run: uv sync
 
+      - name: Start database-backend (uvicorn)
+        working-directory: database
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
+        run: uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 &
+
+      - name: Wait for database-backend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/health; then
+              echo "[OK] database-backend ready"
+              exit 0
+            fi
+            echo "⏳ Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "[KO] Timeout: database-backend did not start"
+          exit 1
+
       - name: Run API tests
         working-directory: database
         env:
           DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
+          SELF_URL: http://localhost:8001
         run: uv run pytest app/test_api.py -v
+
       - name: Run repository tests
         working-directory: database
         env:
           DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
         run: uv run pytest app/test_repo.py -v
-      # - name: Run tests
-      #   working-directory: database/app
-      #   env:
-      #     DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
-      #   run: uv run pytest . -v
 
   deploy:
     name: Publish images to GHCR
