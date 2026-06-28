@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ "ci-cd", "main" ]  # put "main" branch later
+    branches: [ "ci-cd", "main" ]
   pull_request:
-    branches: [ "ci-cd", "main" ]  # put "main" branch later
+    branches: [ "ci-cd", "main" ]
 
 permissions:
   contents: read
@@ -12,29 +12,46 @@ permissions:
 
 jobs:
   build:
-    name: Build Docker images
+    name: Build & verify Docker images
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-      - name: Building Docker images
+
+      - name: Build Docker images
         run: docker compose build
-      - name: Verify Docker images
+
+      - name: Start containers
+        run: docker compose up -d
+
+      - name: Wait for services to initialize
+        run: sleep 20
+
+      - name: Check all containers are running
         run: |
-          docker compose up -d
-          sleep 15
           docker compose ps
           docker compose logs
-          docker compose down
 
-  tests:
-    name: Tests with pytest
+          # Count the containers that are no longer "running"
+          EXITED=$(docker compose ps --status exited -q | wc -l)
+          if [ "$EXITED" -gt 0 ]; then
+            echo "[KO] $EXITED container(s) have exited unexpectedly"
+            exit 1
+          fi
+          echo "[OK] All containers are running"
+
+      - name: Teardown
+        if: always()  # clean even if the job fails
+        run: docker compose down
+
+  tests-backend:
+    name: Backend unit tests
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git gcc g++ cmake build-essential
@@ -50,16 +67,63 @@ jobs:
         working-directory: backend
         run: uv run pytest . -v
 
-  deploy:
-    name: Publish images
+  tests-database:
+    name: Database service unit tests
     runs-on: ubuntu-latest
-    needs: [tests, build]
+
+    # PostgreSQL available for test_repo.py
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: mydatabase
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git gcc g++ cmake build-essential
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install Python dependencies
+        working-directory: database
+        run: uv sync
+
+      - name: Run API tests
+        working-directory: database
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
+        run: uv run pytest test_api.py -v
+
+      - name: Run repository tests
+        working-directory: database
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/mydatabase
+        run: uv run pytest test_repo.py -v
+
+  deploy:
+    name: Publish images to GHCR
+    runs-on: ubuntu-latest
+    needs: [build, tests-backend, tests-database]  # les 3 jobs doivent passer
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Connexion to ghcr.io
+      - name: Login to ghcr.io
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
