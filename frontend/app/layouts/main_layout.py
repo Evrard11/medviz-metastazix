@@ -1,7 +1,5 @@
 import dash_mantine_components as dmc
 from dash_iconify import DashIconify
-from data.db_client import get_patients
-from components.cards import patient_card, anomaly_card
 from dash import dcc, html
 import plotly.express as px
 import numpy as np
@@ -13,7 +11,7 @@ mock_image = np.zeros((512, 512))
 fig_2d = px.imshow(mock_image, color_continuous_scale='gray', template="plotly_dark")
 fig_2d.update_layout(
     dragmode="drawclosedpath",
-    newshape=dict(line_color="cyan", opacity=0.8, line_width=2),
+    newshape=dict(line_color="dodgerblue", opacity=0.8, line_width=2),
     margin=dict(l=0, r=0, b=0, t=0),
     coloraxis_showscale=False,
     uirevision='constant'
@@ -108,7 +106,6 @@ center_column = dmc.Stack(
         dcc.Store(id='selected-anomaly-store', data=None),
         dcc.Store(id='current-3d-model', data=None),
         dcc.Store(id='upload-content-store', data=None),
-        dcc.Store(id='ann-count-store', data=0),
         dcc.Loading(
             id="loading-3d",
             type="circle",
@@ -170,10 +167,14 @@ center_column = dmc.Stack(
                                     style={"width": "100%", "height": "100%", "flex": 1},
                                     children=[
                                         dash_vtk.GeometryRepresentation(
+                                            id="lung-mesh-repr",
+                                            property={"color": [1, 1, 1], "opacity": 0.15, "edgeVisibility": False},
                                             children=[
                                                 dash_vtk.PolyData(points=lung_points, polys=lung_polys)
                                             ]
-                                        )
+                                        ),
+                                        dash_vtk.GeometryRepresentation(id="slice-plane-repr"),
+                                        html.Div(id="vtk-annotations-container", style={"display": "none"}, children=[])
                                     ]
                                 )
                             ]

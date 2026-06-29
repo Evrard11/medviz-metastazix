@@ -36,16 +36,9 @@ Le projet utilise `uv` pour gérer les dépendances (via le fichier `pyproject.t
 
 ## Comment lancer avec Docker
 
-Vous pouvez construire et lancer le conteneur avec `Docker` :
+Vous pouvez construire et lancer le conteneur en vous mettant dans le dossier p^rincipal et en lançant la commande :
 
-*TODO : NOT TESTED*
-
-1. **Construire l'image** :
+**Construire l'image** :
    ```bash
-   docker build -t medviz-frontend .
-   ```
-
-2. **Lancer le conteneur** :
-   ```bash
-   docker run -p 80:80 medviz-frontend
+   docker compose up --build
    ```

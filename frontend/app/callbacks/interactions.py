@@ -1,17 +1,22 @@
-from dash import Input, Output, State, ALL, ctx, no_update, Patch
-from core import app
-import dash_vtk
-import plotly.express as px
+import base64
+from functools import lru_cache
+import json
+import os
 import uuid
-import math
+import zipfile
+
+import dash_mantine_components as dmc
+import dash_vtk
+from dash import Input, Output, State, ALL, ctx, no_update, Patch, html
+import numpy as np
+import requests
+
+from core import app
 from data.backend_integration import segmenter, lung_points, lung_polys
 from components.cards import anomaly_card
 from utils.parsing_utils import svg_path_to_vtk_polydata
 
 # region HELPERS
-
-import uuid as _uuid
-import numpy as np
 
 def _parse_anomalies(anomalies: list) -> list:
     """Convert backend anomaly dicts into annotation store entries (1 per nodule)."""
@@ -21,7 +26,7 @@ def _parse_anomalies(anomalies: list) -> list:
         score = res.get("score", 0)
         pred = "Malignant" if score > 0.5 else "Benign"
         annotations.append({
-            "id":         f"AUTO-{_uuid.uuid4().hex[:8].upper()}",
+            "id":         f"AUTO-{uuid.uuid4().hex[:8].upper()}",
             "slice":      int((z1 + z2) / 2) + 1,   # central slice, 1-indexed
             "z_range":    [int(z1), int(z2)],         # full extent for 2-D filtering
             "type":       "circle",
@@ -35,8 +40,6 @@ def _parse_anomalies(anomalies: list) -> list:
 
 
 def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
-    import dash_vtk
-    import math
     reps = []
     spacing = model_data.get("spacing", [1, 1, 1]) if model_data else [1, 1, 1]
     
@@ -44,18 +47,27 @@ def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
         color = ([1, 1, 0] if selected_anomaly == ann.get('id')
                  else ([1, 0, 0] if ann.get('prediction') == 1 else [0, 1, 0])
         if 'prediction' in ann
-        else ([1, 1, 0] if selected_anomaly == ann.get('id') else [0, 0, 1]))
+        else ([1, 1, 0] if selected_anomaly == ann.get('id') else [0.1, 0.6, 1.0]))
 
-        if ann.get('loc') == 'Backend' and 'z_range' in ann:
-            z1, z2 = ann['z_range']
+        is_sphere = (ann.get('loc') == 'Backend' and 'z_range' in ann) or (ann.get('loc') == 'Tracés manuels' and ann.get('type') == 'circle')
+
+        if is_sphere:
+            if 'z_range' in ann:
+                z1, z2 = ann['z_range']
+                cz = (z1 + z2) / 2 * spacing[2]
+                r_z = abs(z2 - z1) / 2 * spacing[2]
+            else:
+                cz = (ann.get('slice', 1) - 1) * spacing[2]
+                r_z = 0.0
+                
             cx = (ann['x0'] + ann['x1']) / 2 * spacing[0]
             cy = (ann['y0'] + ann['y1']) / 2 * spacing[1]
-            cz = (z1 + z2) / 2 * spacing[2]
-            r = max(
+            r_2d = max(
                 abs(ann['x1'] - ann['x0']) / 2 * spacing[0],
-                abs(ann['y1'] - ann['y0']) / 2 * spacing[1],
-                abs(z2 - z1) / 2 * spacing[2],
+                abs(ann['y1'] - ann['y0']) / 2 * spacing[1]
             )
+            r = max(r_2d, r_z) if r_z > 0 else r_2d
+            
             reps.append(
                 dash_vtk.GeometryRepresentation(
                     property={"color": color, "opacity": 0.35},
@@ -74,16 +86,6 @@ def _build_vtk_annotations_list(store_data, selected_anomaly, model_data):
                 x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
                 x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
                 path_str = f"M {x0},{y0} L {x1},{y0} L {x1},{y1} L {x0},{y1} Z"
-            elif ann.get('type') == 'circle':
-                x0, y0 = ann.get('x0', 0), ann.get('y0', 0)
-                x1, y1 = ann.get('x1', 0), ann.get('y1', 0)
-                cx_2d, cy_2d = (x0+x1)/2, (y0+y1)/2
-                rx, ry = abs(x1-x0)/2, abs(y1-y0)/2
-                pts = []
-                for i in range(16):
-                    ang = i * math.pi / 8
-                    pts.append(f"{cx_2d + rx*math.cos(ang)},{cy_2d + ry*math.sin(ang)}")
-                path_str = f"M {pts[0]} " + " ".join([f"L {p}" for p in pts[1:]]) + " Z"
 
             if path_str:
                 pts, polys = svg_path_to_vtk_polydata(path_str, ann.get('slice', 1) - 1, spacing)
@@ -110,8 +112,10 @@ def _apply_resp_data(resp_data: dict) -> list:
 
     return _parse_anomalies(resp_data.get("anomalies", []))
 
+from functools import lru_cache
+
+@lru_cache(maxsize=10)
 def _call_backend(patient_id: str) -> dict | None:
-    import os, requests
     BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
     try:
         resp = requests.post(f"{BACKEND_URL}/process_dicom", json={"patient_id": patient_id})
@@ -219,7 +223,12 @@ def register_callbacks():
                 continue
 
             if ann.get('slice') == slice_idx:
-                color = "yellow" if selected_anomaly == ann['id'] else "cyan"
+                if selected_anomaly == ann['id']:
+                    color = "yellow"
+                elif ann.get('loc') == 'Tracés manuels':
+                    color = "dodgerblue"
+                else:
+                    color = "red" if ann.get('prediction') == 1 else "lime"
                 
                 shape_dict = dict(
                     type=ann.get('type', 'path'),
@@ -256,7 +265,6 @@ def register_callbacks():
 
     @app.callback(
         Output('vtk-container', 'children'),
-        Output('ann-count-store', 'data', allow_duplicate=True),
         Input('current-3d-model', 'data'),
         State('slice-slider', 'value'),
         State('annotations-store', 'data'),
@@ -267,8 +275,6 @@ def register_callbacks():
         """
         Rebuild the 3D VTK view ONLY when the underlying 3D model changes.
         """
-        import dash_vtk
-        
         if model_data and "volume" in model_data:
             volume_data = model_data["volume"]
             dims = model_data["dimensions"]
@@ -320,8 +326,7 @@ def register_callbacks():
             triggerRender = 0
             
             ann_reps = _build_vtk_annotations_list(annotations, selected_anomaly, model_data)
-            vtk_children.extend(ann_reps)
-            ann_count = len(ann_reps)
+            vtk_children.append(html.Div(id="vtk-annotations-container", style={"display": "none"}, children=ann_reps))
         else:
             vtk_children = [
                 dash_vtk.GeometryRepresentation(
@@ -329,10 +334,10 @@ def register_callbacks():
                     property={"color": [1, 1, 1], "opacity": 0.15, "edgeVisibility": False},
                     children=[dash_vtk.PolyData(points=lung_points, polys=lung_polys)]
                 ),
-                dash_vtk.GeometryRepresentation(id="slice-plane-repr")
+                dash_vtk.GeometryRepresentation(id="slice-plane-repr"),
+                html.Div(id="vtk-annotations-container", style={"display": "none"}, children=[])
             ]
             triggerRender = 1
-            ann_count = 0
 
         view_component = dash_vtk.View(
             id="vtk-view",
@@ -342,42 +347,27 @@ def register_callbacks():
             children=vtk_children
         )
                 
-        return [view_component], ann_count
+        return [view_component]
 
     @app.callback(
-        Output('vtk-view', 'children'),
-        Output('ann-count-store', 'data'),
+        Output('vtk-annotations-container', 'children'),
         Input('annotations-store', 'data'),
         Input('selected-anomaly-store', 'data'),
         Input('current-3d-model', 'data'),
-        State('ann-count-store', 'data'),
         prevent_initial_call=True
     )
-    def update_vtk_annotations(store_data, selected_anomaly, model_data, ann_count):
+    def update_vtk_annotations(store_data, selected_anomaly, model_data):
         """
-        Dynamically append/remove annotations using Patch(), leaving the VolumeRepresentation untouched.
+        Dynamically append/remove annotations in a dedicated container, leaving the View untouched.
         This prevents resetting user settings ('Use shadow', 'Rainbow').
         """
-        import dash
-        import dash_vtk
-        import math
-        
-        triggered_ids = [t['prop_id'].split('.')[0] for t in dash.callback_context.triggered]
+        triggered_ids = [t['prop_id'].split('.')[0] for t in ctx.triggered]
         if 'current-3d-model' in triggered_ids:
-            return dash.no_update, dash.no_update
+            return no_update
         
-        patch = Patch()
-        ann_count = ann_count or 0
-        
-        # Remove previous annotations from the Patch array
-        for _ in range(ann_count):
-            del patch[-1]
-            
         ann_reps = _build_vtk_annotations_list(store_data, selected_anomaly, model_data)
-        for rep in ann_reps:
-            patch.append(rep)
                     
-        return patch, len(ann_reps)
+        return ann_reps
 
     @app.callback(
         Output('slice-plane-poly', 'points'),
@@ -443,7 +433,7 @@ def register_callbacks():
         State('slice-slider', 'value'),
         prevent_initial_call=True
     )
-    def select_anomaly(n_clicks_list, store_data, current_slice):
+    def select_anomaly(_, store_data, current_slice):
         """
         Handle clicks on anomaly cards to select them and update the 
         slice slider to the anomaly's location.
@@ -471,7 +461,7 @@ def register_callbacks():
         State('annotations-store', 'data'),
         prevent_initial_call=True
     )
-    def delete_anomaly(n_clicks_list, store_data):
+    def delete_anomaly(_, store_data):
         """
         Handle clicks on the trash icon to delete an anomaly from the store.
         """
@@ -515,7 +505,7 @@ def register_callbacks():
         Input('upload-dicom-2d', 'contents'),
         prevent_initial_call=True
     )
-    def handle_upload(contents1, contents2):
+    def handle_upload(_1, _2):
         if not ctx.triggered:
             return no_update
         contents = ctx.triggered[0]['value']
@@ -534,29 +524,23 @@ def register_callbacks():
         return False
 
     @app.callback(
-            Output('patients-store', 'data'),
-            Output('current-3d-model', 'data'),
-            Output('annotations-store', 'data', allow_duplicate=True),
-            Output('patient-modal', 'opened', allow_duplicate=True),
-            Input('submit-patient-btn', 'n_clicks'),
-            State('patient-name-input', 'value'),
-            State('patient-age-input', 'value'),
-            State('patient-sex-input', 'value'),
-            State('upload-content-store', 'data'),
-            State('patients-store', 'data'),
-            State('annotations-store', 'data'),
-            prevent_initial_call=True
+        Output('patients-store', 'data'),
+        Output('current-3d-model', 'data'),
+        Output('annotations-store', 'data', allow_duplicate=True),
+        Output('patient-modal', 'opened', allow_duplicate=True),
+        Input('submit-patient-btn', 'n_clicks'),
+        State('patient-name-input', 'value'),
+        State('patient-age-input', 'value'),
+        State('patient-sex-input', 'value'),
+        State('upload-content-store', 'data'),
+        State('patients-store', 'data'),
+        prevent_initial_call=True
     )
-    def process_dicom_upload(n_clicks, name, age, sex, contents, patients_data, annotations_data):
+    def process_dicom_upload(n_clicks, name, age, sex, contents, patients_data):
         if not n_clicks or not contents:
             return no_update, no_update, no_update, no_update
-
-        import base64
-        import os
-        import requests
-        import zipfile
-        import uuid
-
+        
+        # Save ZIP
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
 
@@ -589,8 +573,8 @@ def register_callbacks():
         }
         patients_data.append(new_patient)
 
-        try:
-            DB_URL = os.environ.get("DATABASE_BACKEND_URL", "http://database-backend:8001")
+        # Return patients, the 3d model data, annotations and close modal
+        return patients_data, resp_data, new_annotations, False
 
             first = name.split()[0] if name and " " in name else (name or None)
             last = name.split()[-1] if name and " " in name else None
@@ -653,8 +637,6 @@ def register_callbacks():
         Input('annotations-store', 'data')
     )
     def update_traces_info(annotations):
-        import dash_mantine_components as dmc
-        from components.cards import anomaly_card
         
         manual_traces = [a for a in annotations if a.get('loc') == 'Tracés manuels']
         if not manual_traces:
@@ -678,20 +660,15 @@ def register_callbacks():
         State('annotations-store', 'data'),
         prevent_initial_call=True
     )
-    def handle_report_modal(open_clicks, close_clicks, patients, annotations):
-        import dash
-        ctx = dash.callback_context
+    def handle_report_modal(_1, _2, patients, annotations):
         if not ctx.triggered:
-            return False, dash.no_update
+            return False, no_update
         
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         
         if trigger_id == 'close-report-btn':
-            return False, dash.no_update
+            return False, no_update
             
-        import dash_mantine_components as dmc
-        from dash import html
-        
         patient = patients[-1] if patients else {"name": "Inconnu", "age": "N/A", "sex": "N/A"}
         
         auto_anomalies = [a for a in annotations if a.get('loc') == 'Backend']
@@ -742,12 +719,10 @@ def register_callbacks():
         Input({'type': 'patient-card', 'index': ALL}, 'n_clicks'),
         prevent_initial_call=True
     )
-    def switch_patient(n_clicks_list):
+    def switch_patient(_):
         if not ctx.triggered or ctx.triggered[0]['value'] in (None, 0):
             return no_update, no_update
 
-        import json
-        from data.db_client import get_patient_nodules
         triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
         patient_id = triggered_id['index']
 
