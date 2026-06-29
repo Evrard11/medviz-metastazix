@@ -543,27 +543,28 @@ def register_callbacks():
         # Save ZIP
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
-
+        
         STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage"))
         uploads_dir = os.path.join(STORAGE_DIR, "uploads")
         os.makedirs(uploads_dir, exist_ok=True)
-
+        
         patient_id = f"PAT-{str(uuid.uuid4())[:8].upper()}"
         patient_dir = os.path.join(uploads_dir, patient_id)
         os.makedirs(patient_dir, exist_ok=True)
-
+        
         zip_path = os.path.join(patient_dir, "upload.zip")
         with open(zip_path, "wb") as f:
             f.write(decoded)
-
+            
         # Unzip
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(patient_dir)
-
+            
         # Call Backend
         resp_data = _call_backend(patient_id) or {"error": "backend unreachable"}
         new_annotations = _apply_resp_data(resp_data)
-
+            
+        # Add patient to store
         new_patient = {
             "id": patient_id,
             "name": name or "Inconnu",
@@ -576,51 +577,6 @@ def register_callbacks():
         # Return patients, the 3d model data, annotations and close modal
         return patients_data, resp_data, new_annotations, False
 
-            first = name.split()[0] if name and " " in name else (name or None)
-            last = name.split()[-1] if name and " " in name else None
-            r = requests.post(
-                f"{DB_URL}/patients",
-                json={"anonymized_id": patient_id, "first_name": first, "last_name": last, "sex": sex},
-                timeout=10
-            )
-            r.raise_for_status()
-            db_patient_id = r.json()["id"]
-
-            r = requests.post(
-                f"{DB_URL}/patients/{db_patient_id}/exams",
-                json={"dicom_path": patient_dir, "date_exam": "2026-06-25", "modality": "CT"},
-                timeout=10
-            )
-            r.raise_for_status()
-            db_exam_id = r.json()["id"]
-
-            anomalies = resp_data.get("anomalies", []) if isinstance(resp_data, dict) else []
-            if anomalies:
-                r = requests.post(
-                    f"{DB_URL}/exams/{db_exam_id}/segmentations",
-                    json={"algorithm": "xgboost", "nodule_count": len(anomalies)},
-                    timeout=10
-                )
-                r.raise_for_status()
-                seg_id = r.json()["id"]
-
-                for a in anomalies:
-                    cx, cy, cz = a["centroid"]  # backend renvoie XYZ
-                    requests.post(
-                        f"{DB_URL}/segmentations/{seg_id}/nodules",
-                        json={
-                            "centroid_x": float(cx),
-                            "centroid_y": float(cy),
-                            "centroid_z": float(cz),
-                            "malignancy_score": float(a.get("score", 0)),
-                        },
-                        timeout=10
-                    )
-            print(f"[upload] DB persistée: patient {db_patient_id}, exam {db_exam_id}, {len(anomalies)} nodules")
-        except Exception as e:
-            print(f"[upload] erreur persistance DB (non bloquant): {e}")
-
-        return patients_data, resp_data, annotations_data + new_annotations, False
     @app.callback(
         Output('patients-list', 'children'),
         Input('patients-store', 'data')
@@ -712,7 +668,7 @@ def register_callbacks():
         Input('print-report-btn', 'n_clicks'),
         prevent_initial_call=True
     )
-
+    
     @app.callback(
         Output('current-3d-model', 'data', allow_duplicate=True),
         Output('annotations-store', 'data', allow_duplicate=True),
@@ -727,21 +683,7 @@ def register_callbacks():
         patient_id = triggered_id['index']
 
         resp_data = _call_backend(patient_id)
-        backend_annotations = _apply_resp_data(resp_data) if resp_data else []
+        if not resp_data:
+            return no_update, no_update
 
-        db_annotations = []
-        if isinstance(patient_id, int):
-            db_nodules = get_patient_nodules(patient_id)
-            db_annotations = [
-                {
-                    "id": n["id"],
-                    "slice": n["slice"] if isinstance(n["slice"], int) else 1,
-                    "loc": "Backend",
-                    "size": n["size"],
-                    "note": n["note"],
-                }
-                for n in db_nodules
-            ]
-
-        all_annotations = backend_annotations + db_annotations
-        return resp_data if resp_data else no_update, all_annotations
+        return resp_data, _apply_resp_data(resp_data)
