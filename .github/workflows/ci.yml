@@ -98,7 +98,6 @@ jobs:
         # Replace the docker-entrypoint-initdb.d of the docker-compose
         run: |
           PGPASSWORD=password psql -h localhost -U user -d mydatabase -f database/db/01_schema.sql
-          PGPASSWORD=password psql -h localhost -U user -d mydatabase -f database/db/02_seed.sql
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
